@@ -28,6 +28,7 @@ class GfxRenderer {
   EInkDisplay& einkDisplay;
   RenderMode renderMode;
   Orientation orientation;
+  bool textInverted = false;
   uint8_t* bwBufferChunks[BW_BUFFER_NUM_CHUNKS] = {nullptr};
   std::map<int, EpdFontFamily> fontMap;
   void renderChar(const EpdFontFamily& fontFamily, uint32_t cp, int* x, const int* y, bool pixelState,
@@ -50,6 +51,8 @@ class GfxRenderer {
   // Orientation control (affects logical width/height and coordinate transforms)
   void setOrientation(const Orientation o) { orientation = o; }
   Orientation getOrientation() const { return orientation; }
+  void setTextInverted(const bool inverted) { textInverted = inverted; }
+  bool isTextInverted() const { return textInverted; }
 
   // Screen ops
   int getScreenWidth() const;

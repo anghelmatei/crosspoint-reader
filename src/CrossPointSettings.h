@@ -20,7 +20,7 @@ class CrossPointSettings {
   enum SLEEP_SCREEN_COVER_MODE { FIT = 0, CROP = 1 };
 
   // Status bar display type enum
-  enum STATUS_BAR_MODE { NONE = 0, NO_PROGRESS = 1, FULL = 2 };
+  enum STATUS_BAR_MODE { NONE = 0, NO_PROGRESS = 1, FULL = 2, FULL_BOOK = 3 };
 
   enum ORIENTATION {
     PORTRAIT = 0,      // 480x800 logical coordinates (current default)
@@ -53,7 +53,7 @@ class CrossPointSettings {
   enum REFRESH_FREQUENCY { REFRESH_1 = 0, REFRESH_5 = 1, REFRESH_10 = 2, REFRESH_15 = 3, REFRESH_30 = 4 };
 
   // Short power button press actions
-  enum SHORT_PWRBTN { IGNORE = 0, SLEEP = 1, PAGE_TURN = 2 };
+  enum SHORT_PWRBTN { IGNORE = 0, SLEEP = 1, PAGE_TURN = 2, ORIENTATION_CYCLE = 3 };
 
   // Hide battery percentage
   enum HIDE_BATTERY_PERCENTAGE { HIDE_NEVER = 0, HIDE_READER = 1, HIDE_ALWAYS = 2 };
@@ -67,6 +67,7 @@ class CrossPointSettings {
   // Text rendering settings
   uint8_t extraParagraphSpacing = 1;
   uint8_t textAntiAliasing = 1;
+  uint8_t readerDarkMode = 0;
   // Short power button click behaviour
   uint8_t shortPwrBtn = IGNORE;
   // EPUB reading orientation settings

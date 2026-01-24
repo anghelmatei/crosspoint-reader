@@ -779,6 +779,8 @@ void GfxRenderer::renderChar(const EpdFontFamily& fontFamily, const uint32_t cp,
   const uint8_t* bitmap = nullptr;
   bitmap = &fontFamily.getData(style)->bitmap[offset];
 
+  const bool effectivePixelState = textInverted ? !pixelState : pixelState;
+
   if (bitmap != nullptr) {
     for (int glyphY = 0; glyphY < height; glyphY++) {
       const int screenY = *y - glyph->top + glyphY;
@@ -793,15 +795,16 @@ void GfxRenderer::renderChar(const EpdFontFamily& fontFamily, const uint32_t cp,
           // we swap this to better match the way images and screen think about colors:
           // 0 -> black, 1 -> dark grey, 2 -> light grey, 3 -> white
           const uint8_t bmpVal = 3 - (byte >> bit_index) & 0x3;
+          const uint8_t effectiveBmpVal = (textInverted && renderMode != BW) ? (3 - bmpVal) : bmpVal;
 
           if (renderMode == BW && bmpVal < 3) {
             // Black (also paints over the grays in BW mode)
-            drawPixel(screenX, screenY, pixelState);
-          } else if (renderMode == GRAYSCALE_MSB && (bmpVal == 1 || bmpVal == 2)) {
+            drawPixel(screenX, screenY, effectivePixelState);
+          } else if (renderMode == GRAYSCALE_MSB && (effectiveBmpVal == 1 || effectiveBmpVal == 2)) {
             // Light gray (also mark the MSB if it's going to be a dark gray too)
             // We have to flag pixels in reverse for the gray buffers, as 0 leave alone, 1 update
             drawPixel(screenX, screenY, false);
-          } else if (renderMode == GRAYSCALE_LSB && bmpVal == 1) {
+          } else if (renderMode == GRAYSCALE_LSB && effectiveBmpVal == 1) {
             // Dark gray
             drawPixel(screenX, screenY, false);
           }
@@ -810,7 +813,7 @@ void GfxRenderer::renderChar(const EpdFontFamily& fontFamily, const uint32_t cp,
           const uint8_t bit_index = 7 - (pixelPosition % 8);
 
           if ((byte >> bit_index) & 1) {
-            drawPixel(screenX, screenY, pixelState);
+            drawPixel(screenX, screenY, effectivePixelState);
           }
         }
       }

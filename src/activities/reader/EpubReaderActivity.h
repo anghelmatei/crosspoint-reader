@@ -15,6 +15,7 @@ class EpubReaderActivity final : public ActivityWithSubactivity {
   int currentSpineIndex = 0;
   int nextPageNumber = 0;
   int pagesUntilFullRefresh = 0;
+  float pendingSpineFraction = -1.0f;
   bool updateRequired = false;
   const std::function<void()> onGoBack;
   const std::function<void()> onGoHome;
@@ -25,6 +26,10 @@ class EpubReaderActivity final : public ActivityWithSubactivity {
   void renderContents(std::unique_ptr<Page> page, int orientedMarginTop, int orientedMarginRight,
                       int orientedMarginBottom, int orientedMarginLeft);
   void renderStatusBar(int orientedMarginRight, int orientedMarginBottom, int orientedMarginLeft) const;
+  void cycleOrientationPreservePosition();
+  float getCurrentProgress() const;
+  void resolveProgressToSpine(float progress, int& outSpineIndex, float& outSpineFraction) const;
+  void getBookPageProgress(int& outPage, int& outTotal, float& outPercent) const;
 
  public:
   explicit EpubReaderActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, std::unique_ptr<Epub> epub,

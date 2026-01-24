@@ -17,6 +17,7 @@ class TxtReaderActivity final : public ActivityWithSubactivity {
   int currentPage = 0;
   int totalPages = 1;
   int pagesUntilFullRefresh = 0;
+  float pendingProgress = -1.0f;
   bool updateRequired = false;
   const std::function<void()> onGoBack;
   const std::function<void()> onGoHome;
@@ -38,6 +39,7 @@ class TxtReaderActivity final : public ActivityWithSubactivity {
   void renderScreen();
   void renderPage();
   void renderStatusBar(int orientedMarginRight, int orientedMarginBottom, int orientedMarginLeft) const;
+  void cycleOrientationPreservePosition();
 
   void initializeReader();
   bool loadPageAtOffset(size_t offset, std::vector<std::string>& outLines, size_t& nextOffset);

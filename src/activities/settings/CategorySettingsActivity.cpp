@@ -8,10 +8,12 @@
 #include "CalibreSettingsActivity.h"
 #include "ClearCacheActivity.h"
 #include "CrossPointSettings.h"
+#include "CrossPointState.h"
 #include "KOReaderSettingsActivity.h"
 #include "MappedInputManager.h"
 #include "OtaUpdateActivity.h"
 #include "fontIds.h"
+#include "util/WallpaperUtils.h"
 
 void CategorySettingsActivity::taskTrampoline(void* param) {
   auto* self = static_cast<CategorySettingsActivity*>(param);
@@ -127,6 +129,16 @@ void CategorySettingsActivity::toggleCurrentSetting() {
         updateRequired = true;
       }));
       xSemaphoreGive(renderingMutex);
+    } else if (strcmp(setting.name, "Next Wallpaper") == 0) {
+      std::vector<std::string> files;
+      if (listCustomWallpapers(files)) {
+        size_t nextIndex = APP_STATE.lastSleepImage + 1;
+        if (nextIndex >= files.size()) {
+          nextIndex = 0;
+        }
+        APP_STATE.lastSleepImage = nextIndex;
+        APP_STATE.saveToFile();
+      }
     }
   } else {
     return;

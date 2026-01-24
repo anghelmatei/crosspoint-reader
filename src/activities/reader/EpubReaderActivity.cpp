@@ -5,6 +5,9 @@
 #include <GfxRenderer.h>
 #include <SDCardManager.h>
 
+#include <algorithm>
+#include <cmath>
+
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
 #include "EpubReaderChapterSelectionActivity.h"
@@ -96,6 +99,7 @@ void EpubReaderActivity::onExit() {
 
   // Reset orientation back to portrait for the rest of the UI
   renderer.setOrientation(GfxRenderer::Orientation::Portrait);
+  renderer.setTextInverted(false);
 
   // Wait until not rendering to delete task to avoid killing mid-instruction to EPD
   xSemaphoreTake(renderingMutex, portMAX_DELAY);
@@ -163,11 +167,17 @@ void EpubReaderActivity::loop() {
     return;
   }
 
+  const bool powerReleased = mappedInput.wasReleased(MappedInputManager::Button::Power);
+  if (powerReleased && SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::ORIENTATION_CYCLE) {
+    cycleOrientationPreservePosition();
+    return;
+  }
+
   const bool prevReleased = mappedInput.wasReleased(MappedInputManager::Button::PageBack) ||
                             mappedInput.wasReleased(MappedInputManager::Button::Left);
   const bool nextReleased = mappedInput.wasReleased(MappedInputManager::Button::PageForward) ||
                             (SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::PAGE_TURN &&
-                             mappedInput.wasReleased(MappedInputManager::Button::Power)) ||
+                             powerReleased) ||
                             mappedInput.wasReleased(MappedInputManager::Button::Right);
 
   if (!prevReleased && !nextReleased) {
@@ -246,6 +256,8 @@ void EpubReaderActivity::renderScreen() {
     return;
   }
 
+  renderer.setTextInverted(SETTINGS.readerDarkMode);
+
   // edge case handling for sub-zero spine index
   if (currentSpineIndex < 0) {
     currentSpineIndex = 0;
@@ -257,7 +269,7 @@ void EpubReaderActivity::renderScreen() {
 
   // Show end of book screen
   if (currentSpineIndex == epub->getSpineItemsCount()) {
-    renderer.clearScreen();
+    renderer.clearScreen(SETTINGS.readerDarkMode ? 0x00 : 0xFF);
     renderer.drawCenteredText(UI_12_FONT_ID, 300, "End of book", true, EpdFontFamily::BOLD);
     renderer.displayBuffer();
     return;
@@ -336,14 +348,19 @@ void EpubReaderActivity::renderScreen() {
       Serial.printf("[%lu] [ERS] Cache found, skipping build...\n", millis());
     }
 
-    if (nextPageNumber == UINT16_MAX) {
+    if (pendingSpineFraction >= 0.0f && section->pageCount > 0) {
+      const int estimatedPage = static_cast<int>(std::round(pendingSpineFraction * (section->pageCount - 1)));
+      section->currentPage = std::clamp(estimatedPage, 0, section->pageCount - 1);
+      pendingSpineFraction = -1.0f;
+      nextPageNumber = section->currentPage;
+    } else if (nextPageNumber == UINT16_MAX) {
       section->currentPage = section->pageCount - 1;
     } else {
       section->currentPage = nextPageNumber;
     }
   }
 
-  renderer.clearScreen();
+  renderer.clearScreen(SETTINGS.readerDarkMode ? 0x00 : 0xFF);
 
   if (section->pageCount == 0) {
     Serial.printf("[%lu] [ERS] No pages to render\n", millis());
@@ -428,11 +445,14 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
 void EpubReaderActivity::renderStatusBar(const int orientedMarginRight, const int orientedMarginBottom,
                                          const int orientedMarginLeft) const {
   // determine visible status bar elements
-  const bool showProgress = SETTINGS.statusBar == CrossPointSettings::STATUS_BAR_MODE::FULL;
+  const bool showProgress = SETTINGS.statusBar == CrossPointSettings::STATUS_BAR_MODE::FULL ||
+                            SETTINGS.statusBar == CrossPointSettings::STATUS_BAR_MODE::FULL_BOOK;
   const bool showBattery = SETTINGS.statusBar == CrossPointSettings::STATUS_BAR_MODE::NO_PROGRESS ||
-                           SETTINGS.statusBar == CrossPointSettings::STATUS_BAR_MODE::FULL;
+                           SETTINGS.statusBar == CrossPointSettings::STATUS_BAR_MODE::FULL ||
+                           SETTINGS.statusBar == CrossPointSettings::STATUS_BAR_MODE::FULL_BOOK;
   const bool showChapterTitle = SETTINGS.statusBar == CrossPointSettings::STATUS_BAR_MODE::NO_PROGRESS ||
-                                SETTINGS.statusBar == CrossPointSettings::STATUS_BAR_MODE::FULL;
+                                SETTINGS.statusBar == CrossPointSettings::STATUS_BAR_MODE::FULL ||
+                                SETTINGS.statusBar == CrossPointSettings::STATUS_BAR_MODE::FULL_BOOK;
   const bool showBatteryPercentage =
       SETTINGS.hideBatteryPercentage == CrossPointSettings::HIDE_BATTERY_PERCENTAGE::HIDE_NEVER;
 
@@ -442,14 +462,20 @@ void EpubReaderActivity::renderStatusBar(const int orientedMarginRight, const in
   int progressTextWidth = 0;
 
   if (showProgress) {
-    // Calculate progress in book
-    const float sectionChapterProg = static_cast<float>(section->currentPage) / section->pageCount;
-    const float bookProgress = epub->calculateProgress(currentSpineIndex, sectionChapterProg) * 100;
-
-    // Right aligned text for progress counter
     char progressStr[32];
-    snprintf(progressStr, sizeof(progressStr), "%d/%d  %.1f%%", section->currentPage + 1, section->pageCount,
-             bookProgress);
+    if (SETTINGS.statusBar == CrossPointSettings::STATUS_BAR_MODE::FULL_BOOK) {
+      int pageInBook = 0;
+      int totalPages = 0;
+      float percent = 0.0f;
+      getBookPageProgress(pageInBook, totalPages, percent);
+      snprintf(progressStr, sizeof(progressStr), "%d/%d  %.1f%%", pageInBook, totalPages, percent * 100.0f);
+    } else {
+      // Calculate progress in book
+      const float sectionChapterProg = static_cast<float>(section->currentPage) / section->pageCount;
+      const float bookProgress = epub->calculateProgress(currentSpineIndex, sectionChapterProg) * 100;
+      snprintf(progressStr, sizeof(progressStr), "%d/%d  %.1f%%", section->currentPage + 1, section->pageCount,
+               bookProgress);
+    }
     const std::string progress = progressStr;
     progressTextWidth = renderer.getTextWidth(SMALL_FONT_ID, progress.c_str());
     renderer.drawText(SMALL_FONT_ID, renderer.getScreenWidth() - orientedMarginRight - progressTextWidth, textY,
@@ -457,7 +483,8 @@ void EpubReaderActivity::renderStatusBar(const int orientedMarginRight, const in
   }
 
   if (showBattery) {
-    ScreenComponents::drawBattery(renderer, orientedMarginLeft + 1, textY, showBatteryPercentage);
+    ScreenComponents::drawBattery(renderer, orientedMarginLeft + 1, textY, showBatteryPercentage,
+                                  !SETTINGS.readerDarkMode);
   }
 
   if (showChapterTitle) {
@@ -499,4 +526,132 @@ void EpubReaderActivity::renderStatusBar(const int orientedMarginRight, const in
                       titleMarginLeftAdjusted + orientedMarginLeft + (availableTitleSpace - titleWidth) / 2, textY,
                       title.c_str());
   }
+}
+
+float EpubReaderActivity::getCurrentProgress() const {
+  if (!epub || !section || section->pageCount <= 0) {
+    return 0.0f;
+  }
+  const float sectionProgress = static_cast<float>(section->currentPage) / section->pageCount;
+  return epub->calculateProgress(currentSpineIndex, sectionProgress);
+}
+
+void EpubReaderActivity::resolveProgressToSpine(const float progress, int& outSpineIndex,
+                                                float& outSpineFraction) const {
+  outSpineIndex = 0;
+  outSpineFraction = 0.0f;
+
+  if (!epub) {
+    return;
+  }
+
+  const size_t bookSize = epub->getBookSize();
+  if (bookSize == 0) {
+    return;
+  }
+
+  const size_t targetBytes = static_cast<size_t>(bookSize * std::clamp(progress, 0.0f, 1.0f));
+
+  int spineIndex = 0;
+  for (int i = 0; i < epub->getSpineItemsCount(); i++) {
+    const size_t cumulativeSize = epub->getCumulativeSpineItemSize(i);
+    if (cumulativeSize >= targetBytes) {
+      spineIndex = i;
+      break;
+    }
+  }
+
+  const size_t prevCumulative = (spineIndex > 0) ? epub->getCumulativeSpineItemSize(spineIndex - 1) : 0;
+  const size_t spineSize = epub->getCumulativeSpineItemSize(spineIndex) - prevCumulative;
+  const size_t spineOffset = (targetBytes > prevCumulative) ? targetBytes - prevCumulative : 0;
+
+  outSpineIndex = spineIndex;
+  outSpineFraction = spineSize > 0 ? static_cast<float>(spineOffset) / static_cast<float>(spineSize) : 0.0f;
+}
+
+void EpubReaderActivity::cycleOrientationPreservePosition() {
+  if (!epub) {
+    return;
+  }
+
+  const float progress = getCurrentProgress();
+
+  if (SETTINGS.orientation == CrossPointSettings::ORIENTATION::PORTRAIT) {
+    SETTINGS.orientation = CrossPointSettings::ORIENTATION::LANDSCAPE_CCW;
+    renderer.setOrientation(GfxRenderer::Orientation::LandscapeCounterClockwise);
+  } else {
+    SETTINGS.orientation = CrossPointSettings::ORIENTATION::PORTRAIT;
+    renderer.setOrientation(GfxRenderer::Orientation::Portrait);
+  }
+  SETTINGS.saveToFile();
+
+  int targetSpineIndex = 0;
+  float spineFraction = 0.0f;
+  resolveProgressToSpine(progress, targetSpineIndex, spineFraction);
+
+  xSemaphoreTake(renderingMutex, portMAX_DELAY);
+  currentSpineIndex = targetSpineIndex;
+  pendingSpineFraction = spineFraction;
+  nextPageNumber = 0;
+  section.reset();
+  xSemaphoreGive(renderingMutex);
+
+  updateRequired = true;
+}
+
+void EpubReaderActivity::getBookPageProgress(int& outPage, int& outTotal, float& outPercent) const {
+  outPage = 0;
+  outTotal = 0;
+  outPercent = 0.0f;
+
+  if (!epub || !section || section->pageCount <= 0) {
+    return;
+  }
+
+  const size_t bookSize = epub->getBookSize();
+  if (bookSize == 0) {
+    return;
+  }
+
+  const size_t prevSize = (currentSpineIndex > 0) ? epub->getCumulativeSpineItemSize(currentSpineIndex - 1) : 0;
+  const size_t curSize = epub->getCumulativeSpineItemSize(currentSpineIndex) - prevSize;
+  const float bytesPerPage = curSize > 0 ? static_cast<float>(curSize) / section->pageCount : 0.0f;
+  if (bytesPerPage <= 0.0f) {
+    return;
+  }
+
+  int totalPages = 0;
+  int currentPageInBook = 0;
+  size_t prevCumulative = 0;
+
+  for (int i = 0; i < epub->getSpineItemsCount(); i++) {
+    const size_t cumulative = epub->getCumulativeSpineItemSize(i);
+    const size_t spineSize = cumulative - prevCumulative;
+    int spinePages = 0;
+
+    if (i == currentSpineIndex) {
+      spinePages = section->pageCount;
+    } else if (spineSize > 0) {
+      spinePages = static_cast<int>(std::round(spineSize / bytesPerPage));
+      if (spinePages < 1) {
+        spinePages = 1;
+      }
+    }
+
+    if (i < currentSpineIndex) {
+      currentPageInBook += spinePages;
+    }
+
+    totalPages += spinePages;
+    prevCumulative = cumulative;
+  }
+
+  currentPageInBook += section->currentPage + 1;
+  if (totalPages > 0 && currentPageInBook > totalPages) {
+    currentPageInBook = totalPages;
+  }
+
+  outPage = currentPageInBook;
+  outTotal = totalPages;
+  outPercent = totalPages > 0 ? static_cast<float>(currentPageInBook) / totalPages : 0.0f;
 }

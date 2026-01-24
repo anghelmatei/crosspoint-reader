@@ -5,6 +5,9 @@
 #include <Serialization.h>
 #include <Utf8.h>
 
+#include <algorithm>
+#include <cmath>
+
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
 #include "MappedInputManager.h"
@@ -75,6 +78,7 @@ void TxtReaderActivity::onExit() {
 
   // Reset orientation back to portrait for the rest of the UI
   renderer.setOrientation(GfxRenderer::Orientation::Portrait);
+  renderer.setTextInverted(false);
 
   // Wait until not rendering to delete task
   xSemaphoreTake(renderingMutex, portMAX_DELAY);
@@ -107,11 +111,17 @@ void TxtReaderActivity::loop() {
     return;
   }
 
+  const bool powerReleased = mappedInput.wasReleased(MappedInputManager::Button::Power);
+  if (powerReleased && SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::ORIENTATION_CYCLE) {
+    cycleOrientationPreservePosition();
+    return;
+  }
+
   const bool prevReleased = mappedInput.wasReleased(MappedInputManager::Button::PageBack) ||
                             mappedInput.wasReleased(MappedInputManager::Button::Left);
   const bool nextReleased = mappedInput.wasReleased(MappedInputManager::Button::PageForward) ||
                             (SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::PAGE_TURN &&
-                             mappedInput.wasReleased(MappedInputManager::Button::Power)) ||
+                             powerReleased) ||
                             mappedInput.wasReleased(MappedInputManager::Button::Right);
 
   if (!prevReleased && !nextReleased) {
@@ -178,6 +188,12 @@ void TxtReaderActivity::initializeReader() {
 
   // Load saved progress
   loadProgress();
+
+  if (pendingProgress >= 0.0f && totalPages > 0) {
+    const int targetPage = static_cast<int>(std::round(pendingProgress * (totalPages - 1)));
+    currentPage = std::clamp(targetPage, 0, totalPages - 1);
+    pendingProgress = -1.0f;
+  }
 
   initialized = true;
 }
@@ -383,14 +399,14 @@ void TxtReaderActivity::renderScreen() {
 
   // Initialize reader if not done
   if (!initialized) {
-    renderer.clearScreen();
+    renderer.clearScreen(SETTINGS.readerDarkMode ? 0x00 : 0xFF);
     renderer.drawCenteredText(UI_12_FONT_ID, 300, "Indexing...", true, EpdFontFamily::BOLD);
     renderer.displayBuffer();
     initializeReader();
   }
 
   if (pageOffsets.empty()) {
-    renderer.clearScreen();
+    renderer.clearScreen(SETTINGS.readerDarkMode ? 0x00 : 0xFF);
     renderer.drawCenteredText(UI_12_FONT_ID, 300, "Empty file", true, EpdFontFamily::BOLD);
     renderer.displayBuffer();
     return;
@@ -406,7 +422,8 @@ void TxtReaderActivity::renderScreen() {
   currentPageLines.clear();
   loadPageAtOffset(offset, currentPageLines, nextOffset);
 
-  renderer.clearScreen();
+  renderer.setTextInverted(SETTINGS.readerDarkMode);
+  renderer.clearScreen(SETTINGS.readerDarkMode ? 0x00 : 0xFF);
   renderPage();
 
   // Save progress
@@ -497,11 +514,14 @@ void TxtReaderActivity::renderPage() {
 
 void TxtReaderActivity::renderStatusBar(const int orientedMarginRight, const int orientedMarginBottom,
                                         const int orientedMarginLeft) const {
-  const bool showProgress = SETTINGS.statusBar == CrossPointSettings::STATUS_BAR_MODE::FULL;
+  const bool showProgress = SETTINGS.statusBar == CrossPointSettings::STATUS_BAR_MODE::FULL ||
+                            SETTINGS.statusBar == CrossPointSettings::STATUS_BAR_MODE::FULL_BOOK;
   const bool showBattery = SETTINGS.statusBar == CrossPointSettings::STATUS_BAR_MODE::NO_PROGRESS ||
-                           SETTINGS.statusBar == CrossPointSettings::STATUS_BAR_MODE::FULL;
+                           SETTINGS.statusBar == CrossPointSettings::STATUS_BAR_MODE::FULL ||
+                           SETTINGS.statusBar == CrossPointSettings::STATUS_BAR_MODE::FULL_BOOK;
   const bool showTitle = SETTINGS.statusBar == CrossPointSettings::STATUS_BAR_MODE::NO_PROGRESS ||
-                         SETTINGS.statusBar == CrossPointSettings::STATUS_BAR_MODE::FULL;
+                         SETTINGS.statusBar == CrossPointSettings::STATUS_BAR_MODE::FULL ||
+                         SETTINGS.statusBar == CrossPointSettings::STATUS_BAR_MODE::FULL_BOOK;
 
   const auto screenHeight = renderer.getScreenHeight();
   const auto textY = screenHeight - orientedMarginBottom - 4;
@@ -517,7 +537,7 @@ void TxtReaderActivity::renderStatusBar(const int orientedMarginRight, const int
   }
 
   if (showBattery) {
-    ScreenComponents::drawBattery(renderer, orientedMarginLeft, textY);
+    ScreenComponents::drawBattery(renderer, orientedMarginLeft, textY, true, !SETTINGS.readerDarkMode);
   }
 
   if (showTitle) {
@@ -697,4 +717,33 @@ void TxtReaderActivity::savePageIndexCache() const {
 
   f.close();
   Serial.printf("[%lu] [TRS] Saved page index cache: %d pages\n", millis(), totalPages);
+}
+
+void TxtReaderActivity::cycleOrientationPreservePosition() {
+  if (!txt) {
+    return;
+  }
+
+  if (totalPages > 1) {
+    pendingProgress = static_cast<float>(currentPage) / static_cast<float>(totalPages - 1);
+  } else {
+    pendingProgress = 0.0f;
+  }
+
+  if (SETTINGS.orientation == CrossPointSettings::ORIENTATION::PORTRAIT) {
+    SETTINGS.orientation = CrossPointSettings::ORIENTATION::LANDSCAPE_CCW;
+    renderer.setOrientation(GfxRenderer::Orientation::LandscapeCounterClockwise);
+  } else {
+    SETTINGS.orientation = CrossPointSettings::ORIENTATION::PORTRAIT;
+    renderer.setOrientation(GfxRenderer::Orientation::Portrait);
+  }
+  SETTINGS.saveToFile();
+
+  xSemaphoreTake(renderingMutex, portMAX_DELAY);
+  initialized = false;
+  pageOffsets.clear();
+  currentPageLines.clear();
+  xSemaphoreGive(renderingMutex);
+
+  updateRequired = true;
 }
