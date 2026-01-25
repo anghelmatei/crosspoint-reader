@@ -15,6 +15,7 @@
 #include "RecentBooksStore.h"
 #include "ScreenComponents.h"
 #include "fontIds.h"
+#include "util/ClockUtils.h"
 
 namespace {
 // pagesPerRefresh now comes from SETTINGS.getRefreshFrequency()
@@ -455,6 +456,18 @@ void EpubReaderActivity::renderStatusBar(const int orientedMarginRight, const in
                                 SETTINGS.statusBar == CrossPointSettings::STATUS_BAR_MODE::FULL_BOOK;
   const bool showBatteryPercentage =
       SETTINGS.hideBatteryPercentage == CrossPointSettings::HIDE_BATTERY_PERCENTAGE::HIDE_NEVER;
+  const bool allowClock = SETTINGS.showClockInStatusBar &&
+                          SETTINGS.statusBar != CrossPointSettings::STATUS_BAR_MODE::NONE;
+  bool showClock = allowClock;
+  char clockText[6] = "";
+  int clockTextWidth = 0;
+  if (showClock) {
+    if (formatStatusBarClock(clockText, sizeof(clockText))) {
+      clockTextWidth = renderer.getTextWidth(SMALL_FONT_ID, clockText);
+    } else {
+      showClock = false;
+    }
+  }
 
   // Position status bar near the bottom of the logical screen, regardless of orientation
   const auto screenHeight = renderer.getScreenHeight();
@@ -478,13 +491,21 @@ void EpubReaderActivity::renderStatusBar(const int orientedMarginRight, const in
     }
     const std::string progress = progressStr;
     progressTextWidth = renderer.getTextWidth(SMALL_FONT_ID, progress.c_str());
-    renderer.drawText(SMALL_FONT_ID, renderer.getScreenWidth() - orientedMarginRight - progressTextWidth, textY,
-                      progress.c_str());
+    int rightEdge = renderer.getScreenWidth() - orientedMarginRight;
+    if (showClock) {
+      rightEdge -= clockTextWidth + 10;
+    }
+    renderer.drawText(SMALL_FONT_ID, rightEdge - progressTextWidth, textY, progress.c_str());
   }
 
   if (showBattery) {
     ScreenComponents::drawBattery(renderer, orientedMarginLeft + 1, textY, showBatteryPercentage,
                                   !SETTINGS.readerDarkMode);
+  }
+
+  if (showClock) {
+    renderer.drawText(SMALL_FONT_ID, renderer.getScreenWidth() - orientedMarginRight - clockTextWidth, textY,
+                      clockText);
   }
 
   if (showChapterTitle) {
@@ -494,7 +515,10 @@ void EpubReaderActivity::renderStatusBar(const int orientedMarginRight, const in
 
     const int batterySize = showBattery ? (showBatteryPercentage ? 50 : 20) : 0;
     const int titleMarginLeft = batterySize + 30;
-    const int titleMarginRight = progressTextWidth + 30;
+    int titleMarginRight = progressTextWidth + (showProgress ? 30 : 0);
+    if (showClock) {
+      titleMarginRight += clockTextWidth + 30;
+    }
 
     // Attempt to center title on the screen, but if title is too wide then later we will center it within the
     // available space.

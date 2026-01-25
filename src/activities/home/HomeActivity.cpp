@@ -23,7 +23,7 @@ void HomeActivity::taskTrampoline(void* param) {
 }
 
 int HomeActivity::getMenuItemCount() const {
-  int count = 3;  // My Library, File transfer, Settings
+  int count = 3;  // Bookshelf, File transfer, Settings
   if (hasContinueReading) count++;
   if (hasOpdsUrl) count++;
   return count;
@@ -500,9 +500,9 @@ void HomeActivity::render() {
 
   // --- Bottom menu tiles ---
   // Build menu items dynamically
-  std::vector<const char*> menuItems = {"My Library", "File Transfer", "Settings"};
+  std::vector<const char*> menuItems = {"Bookshelf", "File Transfer", "Settings"};
   if (hasOpdsUrl) {
-    // Insert Calibre Library after My Library
+    // Insert Calibre Library after Bookshelf
     menuItems.insert(menuItems.begin() + 1, "Calibre Library");
   }
 

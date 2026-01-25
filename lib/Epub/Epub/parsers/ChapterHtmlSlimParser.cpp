@@ -1,9 +1,15 @@
 #include "ChapterHtmlSlimParser.h"
 
+#include <Bitmap.h>
+#include <Epub.h>
+#include <FsHelpers.h>
 #include <GfxRenderer.h>
 #include <HardwareSerial.h>
+#include <JpegToBmpConverter.h>
 #include <SDCardManager.h>
 #include <expat.h>
+
+#include <cctype>
 
 #include "../Page.h"
 
@@ -30,6 +36,20 @@ constexpr int NUM_SKIP_TAGS = sizeof(SKIP_TAGS) / sizeof(SKIP_TAGS[0]);
 
 bool isWhitespace(const char c) { return c == ' ' || c == '\r' || c == '\n' || c == '\t'; }
 
+bool hasJpegExtension(const std::string& path) {
+  auto endsWithIgnoreCase = [](const std::string& value, const std::string& suffix) {
+    if (value.size() < suffix.size()) return false;
+    for (size_t i = 0; i < suffix.size(); ++i) {
+      const char a = static_cast<char>(std::tolower(value[value.size() - suffix.size() + i]));
+      const char b = static_cast<char>(std::tolower(suffix[i]));
+      if (a != b) return false;
+    }
+    return true;
+  };
+
+  return endsWithIgnoreCase(path, ".jpg") || endsWithIgnoreCase(path, ".jpeg");
+}
+
 // given the start and end of a tag, check to see if it matches a known tag
 bool matches(const char* tag_name, const char* possible_tags[], const int possible_tag_count) {
   for (int i = 0; i < possible_tag_count; i++) {
@@ -52,6 +72,204 @@ void ChapterHtmlSlimParser::startNewTextBlock(const TextBlock::Style style) {
     makePages();
   }
   currentTextBlock.reset(new ParsedText(style, extraParagraphSpacing, hyphenationEnabled));
+}
+
+void ChapterHtmlSlimParser::flushCurrentTextBlock() {
+  if (!currentTextBlock) {
+    currentTextBlock.reset(new ParsedText((TextBlock::Style)paragraphAlignment, extraParagraphSpacing,
+                                          hyphenationEnabled));
+    return;
+  }
+
+  if (!currentTextBlock->isEmpty()) {
+    makePages();
+  }
+  currentTextBlock.reset(new ParsedText((TextBlock::Style)paragraphAlignment, extraParagraphSpacing,
+                                        hyphenationEnabled));
+}
+
+void ChapterHtmlSlimParser::addImageToPage(const std::string& bmpPath, uint16_t width, uint16_t height) {
+  if (!currentPage) {
+    currentPage.reset(new Page());
+    currentPageNextY = 0;
+  }
+
+  int drawWidth = width;
+  int drawHeight = height;
+  if (drawHeight > viewportHeight) {
+    const float scale = static_cast<float>(viewportHeight) / static_cast<float>(drawHeight);
+    drawHeight = viewportHeight;
+    drawWidth = static_cast<int>(drawWidth * scale);
+  }
+  if (drawWidth > viewportWidth) {
+    const float scale = static_cast<float>(viewportWidth) / static_cast<float>(drawWidth);
+    drawWidth = viewportWidth;
+    drawHeight = static_cast<int>(drawHeight * scale);
+  }
+
+  if (currentPageNextY + drawHeight > viewportHeight && currentPageNextY > 0) {
+    completePageFn(std::move(currentPage));
+    currentPage.reset(new Page());
+    currentPageNextY = 0;
+  }
+
+  int16_t xPos = 0;
+  if (drawWidth < viewportWidth) {
+    xPos = static_cast<int16_t>((viewportWidth - drawWidth) / 2);
+  }
+
+  currentPage->elements.push_back(
+      std::make_shared<PageImage>(bmpPath, static_cast<uint16_t>(drawWidth), static_cast<uint16_t>(drawHeight), xPos,
+                                  currentPageNextY));
+  currentPageNextY += drawHeight;
+
+  if (extraParagraphSpacing) {
+    const int lineHeight = renderer.getLineHeight(fontId) * lineCompression;
+    currentPageNextY += lineHeight / 2;
+  }
+}
+
+std::string ChapterHtmlSlimParser::resolveImageHref(const std::string& src) const {
+  if (src.empty()) return {};
+
+  std::string cleaned = src;
+  const auto hashPos = cleaned.find_first_of("#?");
+  if (hashPos != std::string::npos) {
+    cleaned = cleaned.substr(0, hashPos);
+  }
+
+  if (cleaned.rfind("http://", 0) == 0 || cleaned.rfind("https://", 0) == 0 ||
+      cleaned.rfind("data:", 0) == 0) {
+    return {};
+  }
+
+  if (cleaned.empty()) return {};
+
+  if (!cleaned.empty() && cleaned.front() == '/') {
+    cleaned.erase(cleaned.begin());
+    const auto base = epub ? epub->getBasePath() : std::string();
+    if (!base.empty()) {
+      return FsHelpers::normalisePath(base + "/" + cleaned);
+    }
+    return FsHelpers::normalisePath(cleaned);
+  }
+
+  std::string baseDir;
+  const auto slashPos = itemHref.find_last_of('/');
+  if (slashPos != std::string::npos) {
+    baseDir = itemHref.substr(0, slashPos);
+  }
+
+  if (!baseDir.empty()) {
+    return FsHelpers::normalisePath(baseDir + "/" + cleaned);
+  }
+  return FsHelpers::normalisePath(cleaned);
+}
+
+bool ChapterHtmlSlimParser::convertImageToBmp(const std::string& href, std::string* outBmpPath, uint16_t* outWidth,
+                                              uint16_t* outHeight) {
+  if (!epub || href.empty() || !hasJpegExtension(href)) {
+    return false;
+  }
+
+  const auto cacheDir = epub->getCachePath() + "/images";
+  SdMan.mkdir(cacheDir.c_str());
+
+  const auto key = std::to_string(std::hash<std::string>{}(href));
+  const auto bmpPath = cacheDir + "/img_" + key + ".bmp";
+
+  if (SdMan.exists(bmpPath.c_str())) {
+    FsFile bmpFile;
+    if (!SdMan.openFileForRead("EIM", bmpPath, bmpFile)) {
+      return false;
+    }
+    Bitmap bitmap(bmpFile);
+    if (bitmap.parseHeaders() != BmpReaderError::Ok) {
+      bmpFile.close();
+      return false;
+    }
+    *outWidth = bitmap.getWidth();
+    *outHeight = bitmap.getHeight();
+    *outBmpPath = bmpPath;
+    bmpFile.close();
+    return true;
+  }
+
+  const auto tmpJpgPath = cacheDir + "/img_" + key + ".jpg";
+  if (SdMan.exists(tmpJpgPath.c_str())) {
+    SdMan.remove(tmpJpgPath.c_str());
+  }
+
+  FsFile tmpJpg;
+  if (!SdMan.openFileForWrite("EIM", tmpJpgPath, tmpJpg)) {
+    return false;
+  }
+
+  bool ok = epub->readItemContentsToStream(href, tmpJpg, 1024);
+  tmpJpg.close();
+  if (!ok) {
+    SdMan.remove(tmpJpgPath.c_str());
+    return false;
+  }
+
+  FsFile jpgFile;
+  if (!SdMan.openFileForRead("EIM", tmpJpgPath, jpgFile)) {
+    SdMan.remove(tmpJpgPath.c_str());
+    return false;
+  }
+
+  FsFile bmpFile;
+  if (!SdMan.openFileForWrite("EIM", bmpPath, bmpFile)) {
+    jpgFile.close();
+    SdMan.remove(tmpJpgPath.c_str());
+    return false;
+  }
+
+  ok = JpegToBmpConverter::jpegFileToBmpStreamWithSize(jpgFile, bmpFile, viewportWidth, viewportHeight);
+  jpgFile.close();
+  bmpFile.close();
+  SdMan.remove(tmpJpgPath.c_str());
+
+  if (!ok) {
+    SdMan.remove(bmpPath.c_str());
+    return false;
+  }
+
+  FsFile bmpRead;
+  if (!SdMan.openFileForRead("EIM", bmpPath, bmpRead)) {
+    return false;
+  }
+  Bitmap bitmap(bmpRead);
+  if (bitmap.parseHeaders() != BmpReaderError::Ok) {
+    bmpRead.close();
+    return false;
+  }
+  *outWidth = bitmap.getWidth();
+  *outHeight = bitmap.getHeight();
+  *outBmpPath = bmpPath;
+  bmpRead.close();
+  return true;
+}
+
+bool ChapterHtmlSlimParser::handleImageTag(const std::string& src, const std::string& alt) {
+  (void)alt;
+  if (!epub) return false;
+
+  const auto resolved = resolveImageHref(src);
+  if (resolved.empty()) {
+    return false;
+  }
+
+  std::string bmpPath;
+  uint16_t width = 0;
+  uint16_t height = 0;
+  if (!convertImageToBmp(resolved, &bmpPath, &width, &height)) {
+    return false;
+  }
+
+  flushCurrentTextBlock();
+  addImageToPage(bmpPath, width, height);
+  return true;
 }
 
 void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char* name, const XML_Char** atts) {
@@ -78,27 +296,31 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
   }
 
   if (matches(name, IMAGE_TAGS, NUM_IMAGE_TAGS)) {
-    // TODO: Start processing image tags
+    std::string src;
     std::string alt;
     if (atts != nullptr) {
       for (int i = 0; atts[i]; i += 2) {
-        if (strcmp(atts[i], "alt") == 0) {
-          alt = "[Image: " + std::string(atts[i + 1]) + "]";
+        if (strcmp(atts[i], "src") == 0) {
+          src = atts[i + 1];
+        } else if (strcmp(atts[i], "alt") == 0) {
+          alt = atts[i + 1];
         }
       }
-      Serial.printf("[%lu] [EHP] Image alt: %s\n", millis(), alt.c_str());
+    }
 
+    const bool handled = !src.empty() && self->handleImageTag(src, alt);
+    if (!handled) {
+      const std::string altText = alt.empty() ? "[Image]" : "[Image: " + alt + "]";
+      Serial.printf("[%lu] [EHP] Image fallback: %s\n", millis(), altText.c_str());
       self->startNewTextBlock(TextBlock::CENTER_ALIGN);
       self->italicUntilDepth = min(self->italicUntilDepth, self->depth);
       self->depth += 1;
-      self->characterData(userData, alt.c_str(), alt.length());
-
-    } else {
-      // Skip for now
-      self->skipUntilDepth = self->depth;
-      self->depth += 1;
+      self->characterData(userData, altText.c_str(), altText.length());
       return;
     }
+
+    self->depth += 1;
+    return;
   }
 
   if (matches(name, SKIP_TAGS, NUM_SKIP_TAGS)) {

@@ -11,11 +11,14 @@
 
 class Page;
 class GfxRenderer;
+class Epub;
 
 #define MAX_WORD_SIZE 200
 
 class ChapterHtmlSlimParser {
   const std::string& filepath;
+  std::shared_ptr<Epub> epub;
+  std::string itemHref;
   GfxRenderer& renderer;
   std::function<void(std::unique_ptr<Page>)> completePageFn;
   std::function<void(int)> progressFn;  // Progress callback (0-100)
@@ -40,19 +43,28 @@ class ChapterHtmlSlimParser {
 
   void startNewTextBlock(TextBlock::Style style);
   void makePages();
+  void flushCurrentTextBlock();
+  void addImageToPage(const std::string& bmpPath, uint16_t width, uint16_t height);
+  std::string resolveImageHref(const std::string& src) const;
+  bool convertImageToBmp(const std::string& itemHref, std::string* outBmpPath, uint16_t* outWidth,
+                         uint16_t* outHeight);
+  bool handleImageTag(const std::string& src, const std::string& alt);
   // XML callbacks
   static void XMLCALL startElement(void* userData, const XML_Char* name, const XML_Char** atts);
   static void XMLCALL characterData(void* userData, const XML_Char* s, int len);
   static void XMLCALL endElement(void* userData, const XML_Char* name);
 
  public:
-  explicit ChapterHtmlSlimParser(const std::string& filepath, GfxRenderer& renderer, const int fontId,
+  explicit ChapterHtmlSlimParser(const std::string& filepath, std::shared_ptr<Epub> epub, std::string itemHref,
+                                 GfxRenderer& renderer, const int fontId,
                                  const float lineCompression, const bool extraParagraphSpacing,
                                  const uint8_t paragraphAlignment, const uint16_t viewportWidth,
                                  const uint16_t viewportHeight, const bool hyphenationEnabled,
                                  const std::function<void(std::unique_ptr<Page>)>& completePageFn,
                                  const std::function<void(int)>& progressFn = nullptr)
       : filepath(filepath),
+        epub(std::move(epub)),
+        itemHref(std::move(itemHref)),
         renderer(renderer),
         fontId(fontId),
         lineCompression(lineCompression),

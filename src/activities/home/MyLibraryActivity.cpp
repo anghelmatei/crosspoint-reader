@@ -84,6 +84,24 @@ void MyLibraryActivity::loadRecentBooks() {
       continue;
     }
 
+    // Skip directories and non-book files (defensive: recent list should only contain books)
+    {
+      auto f = SdMan.open(path.c_str());
+      if (!f) {
+        continue;
+      }
+      const bool isDir = f.isDirectory();
+      f.close();
+      if (isDir) {
+        continue;
+      }
+    }
+
+    if (!(StringUtils::checkFileExtension(path, ".epub") || StringUtils::checkFileExtension(path, ".xtch") ||
+          StringUtils::checkFileExtension(path, ".xtc") || StringUtils::checkFileExtension(path, ".txt"))) {
+      continue;
+    }
+
     // Extract filename from path for display
     std::string title = path;
     const size_t lastSlash = title.find_last_of('/');
@@ -115,9 +133,8 @@ void MyLibraryActivity::loadFiles() {
       continue;
     }
 
-    if (file.isDirectory()) {
-      files.emplace_back(std::string(name) + "/");
-    } else {
+    // Ignore folders and non-book files
+    if (!file.isDirectory()) {
       auto filename = std::string(name);
       if (StringUtils::checkFileExtension(filename, ".epub") || StringUtils::checkFileExtension(filename, ".xtch") ||
           StringUtils::checkFileExtension(filename, ".xtc") || StringUtils::checkFileExtension(filename, ".txt")) {
@@ -303,7 +320,7 @@ void MyLibraryActivity::render() const {
   renderer.clearScreen();
 
   // Draw tab bar
-  std::vector<TabInfo> tabs = {{"Recent", currentTab == Tab::Recent}, {"Files", currentTab == Tab::Files}};
+  std::vector<TabInfo> tabs = {{"Recent", currentTab == Tab::Recent}, {"Bookshelf", currentTab == Tab::Files}};
   ScreenComponents::drawTabBar(renderer, TAB_BAR_Y, tabs);
 
   // Draw content based on current tab

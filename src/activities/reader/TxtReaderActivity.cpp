@@ -13,6 +13,7 @@
 #include "MappedInputManager.h"
 #include "ScreenComponents.h"
 #include "fontIds.h"
+#include "util/ClockUtils.h"
 
 namespace {
 constexpr unsigned long goHomeMs = 1000;
@@ -522,6 +523,18 @@ void TxtReaderActivity::renderStatusBar(const int orientedMarginRight, const int
   const bool showTitle = SETTINGS.statusBar == CrossPointSettings::STATUS_BAR_MODE::NO_PROGRESS ||
                          SETTINGS.statusBar == CrossPointSettings::STATUS_BAR_MODE::FULL ||
                          SETTINGS.statusBar == CrossPointSettings::STATUS_BAR_MODE::FULL_BOOK;
+  const bool allowClock = SETTINGS.showClockInStatusBar &&
+                          SETTINGS.statusBar != CrossPointSettings::STATUS_BAR_MODE::NONE;
+  bool showClock = allowClock;
+  char clockText[6] = "";
+  int clockTextWidth = 0;
+  if (showClock) {
+    if (formatStatusBarClock(clockText, sizeof(clockText))) {
+      clockTextWidth = renderer.getTextWidth(SMALL_FONT_ID, clockText);
+    } else {
+      showClock = false;
+    }
+  }
 
   const auto screenHeight = renderer.getScreenHeight();
   const auto textY = screenHeight - orientedMarginBottom - 4;
@@ -532,17 +545,28 @@ void TxtReaderActivity::renderStatusBar(const int orientedMarginRight, const int
     const std::string progressStr =
         std::to_string(currentPage + 1) + "/" + std::to_string(totalPages) + "  " + std::to_string(progress) + "%";
     progressTextWidth = renderer.getTextWidth(SMALL_FONT_ID, progressStr.c_str());
-    renderer.drawText(SMALL_FONT_ID, renderer.getScreenWidth() - orientedMarginRight - progressTextWidth, textY,
-                      progressStr.c_str());
+    int rightEdge = renderer.getScreenWidth() - orientedMarginRight;
+    if (showClock) {
+      rightEdge -= clockTextWidth + 10;
+    }
+    renderer.drawText(SMALL_FONT_ID, rightEdge - progressTextWidth, textY, progressStr.c_str());
   }
 
   if (showBattery) {
     ScreenComponents::drawBattery(renderer, orientedMarginLeft, textY, true, !SETTINGS.readerDarkMode);
   }
 
+  if (showClock) {
+    renderer.drawText(SMALL_FONT_ID, renderer.getScreenWidth() - orientedMarginRight - clockTextWidth, textY,
+                      clockText);
+  }
+
   if (showTitle) {
     const int titleMarginLeft = 50 + 30 + orientedMarginLeft;
-    const int titleMarginRight = progressTextWidth + 30 + orientedMarginRight;
+    int titleMarginRight = progressTextWidth + (showProgress ? 30 : 0) + orientedMarginRight;
+    if (showClock) {
+      titleMarginRight += clockTextWidth + 30;
+    }
     const int availableTextWidth = renderer.getScreenWidth() - titleMarginLeft - titleMarginRight;
 
     std::string title = txt->getTitle();
