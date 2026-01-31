@@ -101,14 +101,6 @@ void ScreenComponents::drawScrollIndicator(const GfxRenderer& renderer, const in
     renderer.drawLine(startX, indicatorBottom - arrowSize + 1 + i, startX + lineWidth - 1,
                       indicatorBottom - arrowSize + 1 + i);
   }
-
-  // Draw page fraction in the middle (e.g., "1/3")
-  const std::string pageText = std::to_string(currentPage) + "/" + std::to_string(totalPages);
-  const int textWidth = renderer.getTextWidth(SMALL_FONT_ID, pageText.c_str());
-  const int textX = centerX - textWidth / 2;
-  const int textY = (indicatorTop + indicatorBottom) / 2 - renderer.getLineHeight(SMALL_FONT_ID) / 2;
-
-  renderer.drawText(SMALL_FONT_ID, textX, textY, pageText.c_str());
 }
 
 void ScreenComponents::drawProgressBar(const GfxRenderer& renderer, const int x, const int y, const int width,

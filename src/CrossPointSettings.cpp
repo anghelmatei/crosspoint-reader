@@ -14,7 +14,7 @@ CrossPointSettings CrossPointSettings::instance;
 namespace {
 constexpr uint8_t SETTINGS_FILE_VERSION = 1;
 // Increment this when adding new persisted settings fields
-constexpr uint8_t SETTINGS_COUNT = 22;
+constexpr uint8_t SETTINGS_COUNT = 21;
 constexpr char SETTINGS_FILE[] = "/.crosspoint/settings.bin";
 }  // namespace
 
@@ -50,7 +50,6 @@ bool CrossPointSettings::saveToFile() const {
   serialization::writePod(outputFile, longPressChapterSkip);
   serialization::writePod(outputFile, hyphenationEnabled);
   serialization::writePod(outputFile, readerDarkMode);
-  serialization::writePod(outputFile, showClockInStatusBar);
   outputFile.close();
 
   Serial.printf("[%lu] [CPS] Settings saved to file\n", millis());
@@ -124,11 +123,22 @@ bool CrossPointSettings::loadFromFile() {
     if (++settingsRead >= fileSettingsCount) break;
     serialization::readPod(inputFile, readerDarkMode);
     if (++settingsRead >= fileSettingsCount) break;
-    serialization::readPod(inputFile, showClockInStatusBar);
+    // Legacy field (removed): showClockInStatusBar
+    {
+      uint8_t legacy = 0;
+      serialization::readPod(inputFile, legacy);
+      (void)legacy;
+    }
     if (++settingsRead >= fileSettingsCount) break;
   } while (false);
 
   inputFile.close();
+
+  // If a legacy status bar mode is present, coerce to supported mode.
+  if (statusBar == CrossPointSettings::STATUS_BAR_MODE::FULL_BOOK) {
+    statusBar = CrossPointSettings::STATUS_BAR_MODE::FULL;
+  }
+
   Serial.printf("[%lu] [CPS] Settings loaded from file\n", millis());
   return true;
 }

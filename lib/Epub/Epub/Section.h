@@ -11,8 +11,17 @@ class Section {
   std::shared_ptr<Epub> epub;
   const int spineIndex;
   GfxRenderer& renderer;
-  std::string filePath;
+  mutable std::string activeFilePath;
   FsFile file;
+
+  std::string getLegacyFilePath() const {
+    return epub->getCachePath() + "/sections/" + std::to_string(spineIndex) + ".bin";
+  }
+
+  std::string getViewportFilePath(const uint16_t viewportWidth, const uint16_t viewportHeight) const {
+    return epub->getCachePath() + "/sections/" + std::to_string(spineIndex) + "_" + std::to_string(viewportWidth) +
+           "x" + std::to_string(viewportHeight) + ".bin";
+  }
 
   void writeSectionFileHeader(int fontId, float lineCompression, bool extraParagraphSpacing, uint8_t paragraphAlignment,
                               uint16_t viewportWidth, uint16_t viewportHeight, bool hyphenationEnabled);
@@ -26,7 +35,7 @@ class Section {
       : epub(epub),
         spineIndex(spineIndex),
         renderer(renderer),
-        filePath(epub->getCachePath() + "/sections/" + std::to_string(spineIndex) + ".bin") {}
+        activeFilePath(getLegacyFilePath()) {}
   ~Section() = default;
   bool loadSectionFile(int fontId, float lineCompression, bool extraParagraphSpacing, uint8_t paragraphAlignment,
                        uint16_t viewportWidth, uint16_t viewportHeight, bool hyphenationEnabled);

@@ -58,8 +58,14 @@ void Section::writeSectionFileHeader(const int fontId, const float lineCompressi
 bool Section::loadSectionFile(const int fontId, const float lineCompression, const bool extraParagraphSpacing,
                               const uint8_t paragraphAlignment, const uint16_t viewportWidth,
                               const uint16_t viewportHeight, const bool hyphenationEnabled) {
-  if (!SdMan.openFileForRead("SCT", filePath, file)) {
-    return false;
+  // Prefer a per-viewport cache filename so portrait/landscape can coexist.
+  activeFilePath = getViewportFilePath(viewportWidth, viewportHeight);
+  if (!SdMan.openFileForRead("SCT", activeFilePath, file)) {
+    // Backwards compatibility: try legacy filename.
+    activeFilePath = getLegacyFilePath();
+    if (!SdMan.openFileForRead("SCT", activeFilePath, file)) {
+      return false;
+    }
   }
 
   // Match parameters
@@ -106,12 +112,13 @@ bool Section::loadSectionFile(const int fontId, const float lineCompression, con
 
 // Your updated class method (assuming you are using the 'SD' object, which is a wrapper for a specific filesystem)
 bool Section::clearCache() const {
-  if (!SdMan.exists(filePath.c_str())) {
+  const auto path = activeFilePath.empty() ? getLegacyFilePath() : activeFilePath;
+  if (!SdMan.exists(path.c_str())) {
     Serial.printf("[%lu] [SCT] Cache does not exist, no action needed\n", millis());
     return true;
   }
 
-  if (!SdMan.remove(filePath.c_str())) {
+  if (!SdMan.remove(path.c_str())) {
     Serial.printf("[%lu] [SCT] Failed to clear cache\n", millis());
     return false;
   }
@@ -176,7 +183,8 @@ bool Section::createSectionFile(const int fontId, const float lineCompression, c
     progressSetupFn();
   }
 
-  if (!SdMan.openFileForWrite("SCT", filePath, file)) {
+  activeFilePath = getViewportFilePath(viewportWidth, viewportHeight);
+  if (!SdMan.openFileForWrite("SCT", activeFilePath, file)) {
     return false;
   }
   writeSectionFileHeader(fontId, lineCompression, extraParagraphSpacing, paragraphAlignment, viewportWidth,
@@ -195,7 +203,7 @@ bool Section::createSectionFile(const int fontId, const float lineCompression, c
   if (!success) {
     Serial.printf("[%lu] [SCT] Failed to parse XML and build pages\n", millis());
     file.close();
-    SdMan.remove(filePath.c_str());
+    SdMan.remove(activeFilePath.c_str());
     return false;
   }
 
@@ -213,7 +221,7 @@ bool Section::createSectionFile(const int fontId, const float lineCompression, c
   if (hasFailedLutRecords) {
     Serial.printf("[%lu] [SCT] Failed to write LUT due to invalid page positions\n", millis());
     file.close();
-    SdMan.remove(filePath.c_str());
+    SdMan.remove(activeFilePath.c_str());
     return false;
   }
 
@@ -226,7 +234,8 @@ bool Section::createSectionFile(const int fontId, const float lineCompression, c
 }
 
 std::unique_ptr<Page> Section::loadPageFromSectionFile() {
-  if (!SdMan.openFileForRead("SCT", filePath, file)) {
+  const auto path = activeFilePath.empty() ? getLegacyFilePath() : activeFilePath;
+  if (!SdMan.openFileForRead("SCT", path, file)) {
     return nullptr;
   }
 

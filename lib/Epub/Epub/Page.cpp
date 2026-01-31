@@ -1,6 +1,7 @@
 #include "Page.h"
 
 #include <Bitmap.h>
+#include <GfxRenderer.h>
 #include <HardwareSerial.h>
 #include <SDCardManager.h>
 #include <Serialization.h>

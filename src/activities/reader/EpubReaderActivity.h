@@ -29,7 +29,6 @@ class EpubReaderActivity final : public ActivityWithSubactivity {
   void cycleOrientationPreservePosition();
   float getCurrentProgress() const;
   void resolveProgressToSpine(float progress, int& outSpineIndex, float& outSpineFraction) const;
-  void getBookPageProgress(int& outPage, int& outTotal, float& outPercent) const;
 
  public:
   explicit EpubReaderActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, std::unique_ptr<Epub> epub,

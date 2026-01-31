@@ -13,7 +13,6 @@
 #include "MappedInputManager.h"
 #include "ScreenComponents.h"
 #include "fontIds.h"
-#include "util/ClockUtils.h"
 
 namespace {
 constexpr unsigned long goHomeMs = 1000;
@@ -23,6 +22,10 @@ constexpr size_t CHUNK_SIZE = 8 * 1024;  // 8KB chunk for reading
 // Cache file magic and version
 constexpr uint32_t CACHE_MAGIC = 0x54585449;  // "TXTI"
 constexpr uint8_t CACHE_VERSION = 2;          // Increment when cache format changes
+
+std::string getTxtIndexCachePath(const Txt& txt, const int viewportWidth, const int linesPerPage) {
+  return txt.getCachePath() + "/index_" + std::to_string(viewportWidth) + "x" + std::to_string(linesPerPage) + ".bin";
+}
 }  // namespace
 
 void TxtReaderActivity::taskTrampoline(void* param) {
@@ -190,10 +193,15 @@ void TxtReaderActivity::initializeReader() {
   // Load saved progress
   loadProgress();
 
-  if (pendingProgress >= 0.0f && totalPages > 0) {
-    const int targetPage = static_cast<int>(std::round(pendingProgress * (totalPages - 1)));
-    currentPage = std::clamp(targetPage, 0, totalPages - 1);
-    pendingProgress = -1.0f;
+  // If orientation was changed, restore by exact file offset (more stable than % based mapping).
+  if (pendingOffsetValid && !pageOffsets.empty()) {
+    auto it = std::upper_bound(pageOffsets.begin(), pageOffsets.end(), pendingOffset);
+    if (it == pageOffsets.begin()) {
+      currentPage = 0;
+    } else {
+      currentPage = static_cast<int>(std::distance(pageOffsets.begin(), it - 1));
+    }
+    pendingOffsetValid = false;
   }
 
   initialized = true;
@@ -213,7 +221,9 @@ void TxtReaderActivity::buildPageIndex() {
   constexpr int barWidth = 200;
   constexpr int barHeight = 10;
   constexpr int boxMargin = 20;
-  const int textWidth = renderer.getTextWidth(UI_12_FONT_ID, "Indexing...");
+  const bool fg = !SETTINGS.readerDarkMode;
+  const bool bg = SETTINGS.readerDarkMode;
+  const int textWidth = renderer.getTextWidth(UI_12_FONT_ID, "Rotating...");
   const int boxWidth = (barWidth > textWidth ? barWidth : textWidth) + boxMargin * 2;
   const int boxHeight = renderer.getLineHeight(UI_12_FONT_ID) + barHeight + boxMargin * 3;
   const int boxX = (renderer.getScreenWidth() - boxWidth) / 2;
@@ -222,10 +232,11 @@ void TxtReaderActivity::buildPageIndex() {
   const int barY = boxY + renderer.getLineHeight(UI_12_FONT_ID) + boxMargin * 2;
 
   // Draw initial progress box
-  renderer.fillRect(boxX, boxY, boxWidth, boxHeight, false);
-  renderer.drawText(UI_12_FONT_ID, boxX + boxMargin, boxY + boxMargin, "Indexing...");
-  renderer.drawRect(boxX + 5, boxY + 5, boxWidth - 10, boxHeight - 10);
-  renderer.drawRect(barX, barY, barWidth, barHeight);
+  renderer.setTextInverted(false);
+  renderer.fillRect(boxX, boxY, boxWidth, boxHeight, bg);
+  renderer.drawText(UI_12_FONT_ID, boxX + boxMargin, boxY + boxMargin, "Rotating...", fg);
+  renderer.drawRect(boxX + 5, boxY + 5, boxWidth - 10, boxHeight - 10, fg);
+  renderer.drawRect(barX, barY, barWidth, barHeight, fg);
   renderer.displayBuffer();
 
   while (offset < fileSize) {
@@ -253,7 +264,7 @@ void TxtReaderActivity::buildPageIndex() {
 
       // Fill progress bar
       const int fillWidth = (barWidth - 2) * progressPercent / 100;
-      renderer.fillRect(barX + 1, barY + 1, fillWidth, barHeight - 2, true);
+      renderer.fillRect(barX + 1, barY + 1, fillWidth, barHeight - 2, fg);
       renderer.displayBuffer(EInkDisplay::FAST_REFRESH);
     }
 
@@ -400,8 +411,9 @@ void TxtReaderActivity::renderScreen() {
 
   // Initialize reader if not done
   if (!initialized) {
+    renderer.setTextInverted(false);
     renderer.clearScreen(SETTINGS.readerDarkMode ? 0x00 : 0xFF);
-    renderer.drawCenteredText(UI_12_FONT_ID, 300, "Indexing...", true, EpdFontFamily::BOLD);
+    renderer.drawCenteredText(UI_12_FONT_ID, 300, "Rotating...", !SETTINGS.readerDarkMode, EpdFontFamily::BOLD);
     renderer.displayBuffer();
     initializeReader();
   }
@@ -515,26 +527,11 @@ void TxtReaderActivity::renderPage() {
 
 void TxtReaderActivity::renderStatusBar(const int orientedMarginRight, const int orientedMarginBottom,
                                         const int orientedMarginLeft) const {
-  const bool showProgress = SETTINGS.statusBar == CrossPointSettings::STATUS_BAR_MODE::FULL ||
-                            SETTINGS.statusBar == CrossPointSettings::STATUS_BAR_MODE::FULL_BOOK;
+  const bool showProgress = SETTINGS.statusBar == CrossPointSettings::STATUS_BAR_MODE::FULL;
   const bool showBattery = SETTINGS.statusBar == CrossPointSettings::STATUS_BAR_MODE::NO_PROGRESS ||
-                           SETTINGS.statusBar == CrossPointSettings::STATUS_BAR_MODE::FULL ||
-                           SETTINGS.statusBar == CrossPointSettings::STATUS_BAR_MODE::FULL_BOOK;
+                           SETTINGS.statusBar == CrossPointSettings::STATUS_BAR_MODE::FULL;
   const bool showTitle = SETTINGS.statusBar == CrossPointSettings::STATUS_BAR_MODE::NO_PROGRESS ||
-                         SETTINGS.statusBar == CrossPointSettings::STATUS_BAR_MODE::FULL ||
-                         SETTINGS.statusBar == CrossPointSettings::STATUS_BAR_MODE::FULL_BOOK;
-  const bool allowClock = SETTINGS.showClockInStatusBar &&
-                          SETTINGS.statusBar != CrossPointSettings::STATUS_BAR_MODE::NONE;
-  bool showClock = allowClock;
-  char clockText[6] = "";
-  int clockTextWidth = 0;
-  if (showClock) {
-    if (formatStatusBarClock(clockText, sizeof(clockText))) {
-      clockTextWidth = renderer.getTextWidth(SMALL_FONT_ID, clockText);
-    } else {
-      showClock = false;
-    }
-  }
+                         SETTINGS.statusBar == CrossPointSettings::STATUS_BAR_MODE::FULL;
 
   const auto screenHeight = renderer.getScreenHeight();
   const auto textY = screenHeight - orientedMarginBottom - 4;
@@ -542,31 +539,19 @@ void TxtReaderActivity::renderStatusBar(const int orientedMarginRight, const int
 
   if (showProgress) {
     const int progress = totalPages > 0 ? (currentPage + 1) * 100 / totalPages : 0;
-    const std::string progressStr =
-        std::to_string(currentPage + 1) + "/" + std::to_string(totalPages) + "  " + std::to_string(progress) + "%";
+    const std::string progressStr = std::to_string(progress) + "%";
     progressTextWidth = renderer.getTextWidth(SMALL_FONT_ID, progressStr.c_str());
     int rightEdge = renderer.getScreenWidth() - orientedMarginRight;
-    if (showClock) {
-      rightEdge -= clockTextWidth + 10;
-    }
     renderer.drawText(SMALL_FONT_ID, rightEdge - progressTextWidth, textY, progressStr.c_str());
   }
 
   if (showBattery) {
-    ScreenComponents::drawBattery(renderer, orientedMarginLeft, textY, true, !SETTINGS.readerDarkMode);
-  }
-
-  if (showClock) {
-    renderer.drawText(SMALL_FONT_ID, renderer.getScreenWidth() - orientedMarginRight - clockTextWidth, textY,
-                      clockText);
+    ScreenComponents::drawBattery(renderer, orientedMarginLeft, textY, true, true);
   }
 
   if (showTitle) {
     const int titleMarginLeft = 50 + 30 + orientedMarginLeft;
     int titleMarginRight = progressTextWidth + (showProgress ? 30 : 0) + orientedMarginRight;
-    if (showClock) {
-      titleMarginRight += clockTextWidth + 30;
-    }
     const int availableTextWidth = renderer.getScreenWidth() - titleMarginLeft - titleMarginRight;
 
     std::string title = txt->getTitle();
@@ -624,7 +609,7 @@ bool TxtReaderActivity::loadPageIndexCache() {
   // - uint32_t: total pages count
   // - N * uint32_t: page offsets
 
-  std::string cachePath = txt->getCachePath() + "/index.bin";
+  std::string cachePath = getTxtIndexCachePath(*txt, viewportWidth, linesPerPage);
   FsFile f;
   if (!SdMan.openFileForRead("TRS", cachePath, f)) {
     Serial.printf("[%lu] [TRS] No page index cache found\n", millis());
@@ -716,7 +701,7 @@ bool TxtReaderActivity::loadPageIndexCache() {
 }
 
 void TxtReaderActivity::savePageIndexCache() const {
-  std::string cachePath = txt->getCachePath() + "/index.bin";
+  std::string cachePath = getTxtIndexCachePath(*txt, viewportWidth, linesPerPage);
   FsFile f;
   if (!SdMan.openFileForWrite("TRS", cachePath, f)) {
     Serial.printf("[%lu] [TRS] Failed to save page index cache\n", millis());
@@ -748,11 +733,15 @@ void TxtReaderActivity::cycleOrientationPreservePosition() {
     return;
   }
 
-  if (totalPages > 1) {
-    pendingProgress = static_cast<float>(currentPage) / static_cast<float>(totalPages - 1);
+  // Preserve exact location to avoid drifting by +/-1 page after reflow.
+  if (!pageOffsets.empty() && currentPage >= 0 && currentPage < static_cast<int>(pageOffsets.size())) {
+    pendingOffset = pageOffsets[currentPage];
+    pendingOffsetValid = true;
   } else {
-    pendingProgress = 0.0f;
+    pendingOffsetValid = false;
   }
+
+  xSemaphoreTake(renderingMutex, portMAX_DELAY);
 
   if (SETTINGS.orientation == CrossPointSettings::ORIENTATION::PORTRAIT) {
     SETTINGS.orientation = CrossPointSettings::ORIENTATION::LANDSCAPE_CCW;
@@ -763,7 +752,6 @@ void TxtReaderActivity::cycleOrientationPreservePosition() {
   }
   SETTINGS.saveToFile();
 
-  xSemaphoreTake(renderingMutex, portMAX_DELAY);
   initialized = false;
   pageOffsets.clear();
   currentPageLines.clear();

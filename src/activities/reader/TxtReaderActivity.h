@@ -17,7 +17,8 @@ class TxtReaderActivity final : public ActivityWithSubactivity {
   int currentPage = 0;
   int totalPages = 1;
   int pagesUntilFullRefresh = 0;
-  float pendingProgress = -1.0f;
+  size_t pendingOffset = 0;
+  bool pendingOffsetValid = false;
   bool updateRequired = false;
   const std::function<void()> onGoBack;
   const std::function<void()> onGoHome;

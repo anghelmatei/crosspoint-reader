@@ -47,6 +47,7 @@ void SleepActivity::renderPopup(const char* message) const {
 }
 
 void SleepActivity::renderCustomSleepScreen() const {
+  FsFile file;
   std::vector<std::string> files;
   if (listCustomWallpapers(files)) {
     size_t selectedIndex = APP_STATE.lastSleepImage;
@@ -57,7 +58,6 @@ void SleepActivity::renderCustomSleepScreen() const {
     APP_STATE.saveToFile();
 
     const auto filename = "/sleep/" + files[selectedIndex];
-    FsFile file;
     if (SdMan.openFileForRead("SLP", filename, file)) {
       Bitmap bitmap(file, true);
       if (bitmap.parseHeaders() == BmpReaderError::Ok) {

@@ -95,8 +95,6 @@ class CrossPointSettings {
   uint8_t hideBatteryPercentage = HIDE_NEVER;
   // Long-press chapter skip on side buttons
   uint8_t longPressChapterSkip = 1;
-  // Show clock in status bar
-  uint8_t showClockInStatusBar = 0;
 
   ~CrossPointSettings() = default;
 
