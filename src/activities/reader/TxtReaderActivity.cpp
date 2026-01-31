@@ -11,12 +11,14 @@
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
 #include "MappedInputManager.h"
+#include "RecentBooksStore.h"
 #include "ScreenComponents.h"
 #include "fontIds.h"
 
 namespace {
 constexpr unsigned long goHomeMs = 1000;
 constexpr int statusBarMargin = 25;
+constexpr int progressBarMarginTop = 1;
 constexpr size_t CHUNK_SIZE = 8 * 1024;  // 8KB chunk for reading
 
 // Cache file magic and version
@@ -62,9 +64,10 @@ void TxtReaderActivity::onEnter() {
 
   txt->setupCacheDir();
 
-  // Save current txt as last opened file
+  // Save current txt as last opened file and add to recent books
   APP_STATE.openEpubPath = txt->getPath();
   APP_STATE.saveToFile();
+  RECENT_BOOKS.addBook(txt->getPath(), "", "");
 
   // Trigger first update
   updateRequired = true;
@@ -121,21 +124,27 @@ void TxtReaderActivity::loop() {
     return;
   }
 
-  const bool prevReleased = mappedInput.wasReleased(MappedInputManager::Button::PageBack) ||
-                            mappedInput.wasReleased(MappedInputManager::Button::Left);
-  const bool nextReleased = mappedInput.wasReleased(MappedInputManager::Button::PageForward) ||
-                            (SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::PAGE_TURN &&
-                             powerReleased) ||
-                            mappedInput.wasReleased(MappedInputManager::Button::Right);
+  // When long-press chapter skip is disabled, turn pages on press instead of release.
+  const bool usePressForPageTurn = !SETTINGS.longPressChapterSkip;
+  const bool prevTriggered = usePressForPageTurn ? (mappedInput.wasPressed(MappedInputManager::Button::PageBack) ||
+                                                    mappedInput.wasPressed(MappedInputManager::Button::Left))
+                                                 : (mappedInput.wasReleased(MappedInputManager::Button::PageBack) ||
+                                                    mappedInput.wasReleased(MappedInputManager::Button::Left));
+  const bool powerPageTurn = SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::PAGE_TURN && powerReleased;
+  const bool nextTriggered = usePressForPageTurn
+                                 ? (mappedInput.wasPressed(MappedInputManager::Button::PageForward) || powerPageTurn ||
+                                    mappedInput.wasPressed(MappedInputManager::Button::Right))
+                                 : (mappedInput.wasReleased(MappedInputManager::Button::PageForward) || powerPageTurn ||
+                                    mappedInput.wasReleased(MappedInputManager::Button::Right));
 
-  if (!prevReleased && !nextReleased) {
+  if (!prevTriggered && !nextTriggered) {
     return;
   }
 
-  if (prevReleased && currentPage > 0) {
+  if (prevTriggered && currentPage > 0) {
     currentPage--;
     updateRequired = true;
-  } else if (nextReleased && currentPage < totalPages - 1) {
+  } else if (nextTriggered && currentPage < totalPages - 1) {
     currentPage++;
     updateRequired = true;
   }
@@ -170,7 +179,16 @@ void TxtReaderActivity::initializeReader() {
   orientedMarginTop += cachedScreenMargin;
   orientedMarginLeft += cachedScreenMargin;
   orientedMarginRight += cachedScreenMargin;
-  orientedMarginBottom += statusBarMargin;
+  orientedMarginBottom += cachedScreenMargin;
+
+  // Add status bar margin
+  if (SETTINGS.statusBar != CrossPointSettings::STATUS_BAR_MODE::NONE) {
+    // Add additional margin for status bar if progress bar is shown
+    const bool showProgressBar = SETTINGS.statusBar == CrossPointSettings::STATUS_BAR_MODE::FULL_WITH_PROGRESS_BAR ||
+                                 SETTINGS.statusBar == CrossPointSettings::STATUS_BAR_MODE::ONLY_PROGRESS_BAR;
+    orientedMarginBottom += statusBarMargin - cachedScreenMargin +
+                            (showProgressBar ? (ScreenComponents::BOOK_PROGRESS_BAR_HEIGHT + progressBarMarginTop) : 0);
+  }
 
   viewportWidth = renderer.getScreenWidth() - orientedMarginLeft - orientedMarginRight;
   const int viewportHeight = renderer.getScreenHeight() - orientedMarginTop - orientedMarginBottom;
@@ -265,7 +283,7 @@ void TxtReaderActivity::buildPageIndex() {
       // Fill progress bar
       const int fillWidth = (barWidth - 2) * progressPercent / 100;
       renderer.fillRect(barX + 1, barY + 1, fillWidth, barHeight - 2, fg);
-      renderer.displayBuffer(EInkDisplay::FAST_REFRESH);
+      renderer.displayBuffer(HalDisplay::FAST_REFRESH);
     }
 
     // Yield to other tasks periodically
@@ -495,7 +513,7 @@ void TxtReaderActivity::renderPage() {
   renderStatusBar(orientedMarginRight, orientedMarginBottom, orientedMarginLeft);
 
   if (pagesUntilFullRefresh <= 1) {
-    renderer.displayBuffer(EInkDisplay::HALF_REFRESH);
+    renderer.displayBuffer(HalDisplay::HALF_REFRESH);
     pagesUntilFullRefresh = SETTINGS.getRefreshFrequency();
   } else {
     renderer.displayBuffer();
@@ -527,31 +545,50 @@ void TxtReaderActivity::renderPage() {
 
 void TxtReaderActivity::renderStatusBar(const int orientedMarginRight, const int orientedMarginBottom,
                                         const int orientedMarginLeft) const {
-  const bool showProgress = SETTINGS.statusBar == CrossPointSettings::STATUS_BAR_MODE::FULL;
+  const bool showProgressPercentage = SETTINGS.statusBar == CrossPointSettings::STATUS_BAR_MODE::FULL;
+  const bool showProgressBar = SETTINGS.statusBar == CrossPointSettings::STATUS_BAR_MODE::FULL_WITH_PROGRESS_BAR ||
+                               SETTINGS.statusBar == CrossPointSettings::STATUS_BAR_MODE::ONLY_PROGRESS_BAR;
+  const bool showProgressText = SETTINGS.statusBar == CrossPointSettings::STATUS_BAR_MODE::FULL ||
+                                SETTINGS.statusBar == CrossPointSettings::STATUS_BAR_MODE::FULL_WITH_PROGRESS_BAR;
   const bool showBattery = SETTINGS.statusBar == CrossPointSettings::STATUS_BAR_MODE::NO_PROGRESS ||
-                           SETTINGS.statusBar == CrossPointSettings::STATUS_BAR_MODE::FULL;
+                           SETTINGS.statusBar == CrossPointSettings::STATUS_BAR_MODE::FULL ||
+                           SETTINGS.statusBar == CrossPointSettings::STATUS_BAR_MODE::FULL_WITH_PROGRESS_BAR;
   const bool showTitle = SETTINGS.statusBar == CrossPointSettings::STATUS_BAR_MODE::NO_PROGRESS ||
-                         SETTINGS.statusBar == CrossPointSettings::STATUS_BAR_MODE::FULL;
+                         SETTINGS.statusBar == CrossPointSettings::STATUS_BAR_MODE::FULL ||
+                         SETTINGS.statusBar == CrossPointSettings::STATUS_BAR_MODE::FULL_WITH_PROGRESS_BAR;
+  const bool showBatteryPercentage =
+      SETTINGS.hideBatteryPercentage == CrossPointSettings::HIDE_BATTERY_PERCENTAGE::HIDE_NEVER;
 
   const auto screenHeight = renderer.getScreenHeight();
   const auto textY = screenHeight - orientedMarginBottom - 4;
   int progressTextWidth = 0;
 
-  if (showProgress) {
-    const int progress = totalPages > 0 ? (currentPage + 1) * 100 / totalPages : 0;
-    const std::string progressStr = std::to_string(progress) + "%";
-    progressTextWidth = renderer.getTextWidth(SMALL_FONT_ID, progressStr.c_str());
-    int rightEdge = renderer.getScreenWidth() - orientedMarginRight;
-    renderer.drawText(SMALL_FONT_ID, rightEdge - progressTextWidth, textY, progressStr.c_str());
+  const float progress = totalPages > 0 ? (currentPage + 1) * 100.0f / totalPages : 0;
+
+  if (showProgressText || showProgressPercentage) {
+    char progressStr[32];
+    if (showProgressPercentage) {
+      snprintf(progressStr, sizeof(progressStr), "%d/%d %.0f%%", currentPage + 1, totalPages, progress);
+    } else {
+      snprintf(progressStr, sizeof(progressStr), "%d/%d", currentPage + 1, totalPages);
+    }
+
+    progressTextWidth = renderer.getTextWidth(SMALL_FONT_ID, progressStr);
+    renderer.drawText(SMALL_FONT_ID, renderer.getScreenWidth() - orientedMarginRight - progressTextWidth, textY,
+                      progressStr);
+  }
+
+  if (showProgressBar) {
+    ScreenComponents::drawBookProgressBar(renderer, static_cast<size_t>(progress));
   }
 
   if (showBattery) {
-    ScreenComponents::drawBattery(renderer, orientedMarginLeft, textY, true, true);
+    ScreenComponents::drawBattery(renderer, orientedMarginLeft, textY, showBatteryPercentage, true);
   }
 
   if (showTitle) {
     const int titleMarginLeft = 50 + 30 + orientedMarginLeft;
-    int titleMarginRight = progressTextWidth + (showProgress ? 30 : 0) + orientedMarginRight;
+    int titleMarginRight = progressTextWidth + (showProgressText ? 30 : 0) + orientedMarginRight;
     const int availableTextWidth = renderer.getScreenWidth() - titleMarginLeft - titleMarginRight;
 
     std::string title = txt->getTitle();

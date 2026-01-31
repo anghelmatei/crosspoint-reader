@@ -62,7 +62,8 @@ void SleepActivity::renderCustomSleepScreen() const {
       Bitmap bitmap(file, true);
       if (bitmap.parseHeaders() == BmpReaderError::Ok) {
         renderWallpaperBitmap(renderer, bitmap,
-                              SETTINGS.sleepScreenCoverMode == CrossPointSettings::SLEEP_SCREEN_COVER_MODE::CROP);
+                              SETTINGS.sleepScreenCoverMode == CrossPointSettings::SLEEP_SCREEN_COVER_MODE::CROP,
+                              SETTINGS.sleepScreenCoverFilter);
         return;
       }
     }
@@ -75,7 +76,8 @@ void SleepActivity::renderCustomSleepScreen() const {
     if (bitmap.parseHeaders() == BmpReaderError::Ok) {
       Serial.printf("[%lu] [SLP] Loading: /sleep.bmp\n", millis());
       renderWallpaperBitmap(renderer, bitmap,
-                            SETTINGS.sleepScreenCoverMode == CrossPointSettings::SLEEP_SCREEN_COVER_MODE::CROP);
+                            SETTINGS.sleepScreenCoverMode == CrossPointSettings::SLEEP_SCREEN_COVER_MODE::CROP,
+                            SETTINGS.sleepScreenCoverFilter);
       return;
     }
   }
@@ -88,7 +90,7 @@ void SleepActivity::renderDefaultSleepScreen() const {
   const auto pageHeight = renderer.getScreenHeight();
 
   renderer.clearScreen();
-  renderer.drawImage(CrossLarge, (pageWidth + 128) / 2, (pageHeight - 128) / 2, 128, 128);
+  renderer.drawImage(CrossLarge, (pageWidth - 128) / 2, (pageHeight - 128) / 2, 128, 128);
   renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 + 70, "CrossPoint", true, EpdFontFamily::BOLD);
   renderer.drawCenteredText(SMALL_FONT_ID, pageHeight / 2 + 95, "SLEEPING");
 
@@ -97,12 +99,13 @@ void SleepActivity::renderDefaultSleepScreen() const {
     renderer.invertScreen();
   }
 
-  renderer.displayBuffer(EInkDisplay::HALF_REFRESH);
+  renderer.displayBuffer(HalDisplay::HALF_REFRESH);
 }
 
 void SleepActivity::renderBitmapSleepScreen(const Bitmap& bitmap) const {
   renderWallpaperBitmap(renderer, bitmap,
-                        SETTINGS.sleepScreenCoverMode == CrossPointSettings::SLEEP_SCREEN_COVER_MODE::CROP);
+                        SETTINGS.sleepScreenCoverMode == CrossPointSettings::SLEEP_SCREEN_COVER_MODE::CROP,
+                        SETTINGS.sleepScreenCoverFilter);
 }
 
 void SleepActivity::renderCoverSleepScreen() const {
@@ -165,6 +168,7 @@ void SleepActivity::renderCoverSleepScreen() const {
   if (SdMan.openFileForRead("SLP", coverBmpPath, file)) {
     Bitmap bitmap(file);
     if (bitmap.parseHeaders() == BmpReaderError::Ok) {
+      Serial.printf("[SLP] Rendering sleep cover: %s\n", coverBmpPath);
       renderBitmapSleepScreen(bitmap);
       return;
     }
@@ -175,5 +179,5 @@ void SleepActivity::renderCoverSleepScreen() const {
 
 void SleepActivity::renderBlankSleepScreen() const {
   renderer.clearScreen();
-  renderer.displayBuffer(EInkDisplay::HALF_REFRESH);
+  renderer.displayBuffer(HalDisplay::HALF_REFRESH);
 }

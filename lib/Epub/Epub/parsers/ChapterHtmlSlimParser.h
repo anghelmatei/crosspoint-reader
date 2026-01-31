@@ -42,6 +42,7 @@ class ChapterHtmlSlimParser {
   bool hyphenationEnabled;
 
   void startNewTextBlock(TextBlock::Style style);
+  void flushPartWordBuffer();
   void makePages();
   void flushCurrentTextBlock();
   void addImageToPage(const std::string& bmpPath, uint16_t width, uint16_t height);

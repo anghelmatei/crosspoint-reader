@@ -10,4 +10,4 @@ class Bitmap;
 
 bool listCustomWallpapers(std::vector<std::string>& files);
 bool openCustomWallpaperFile(size_t index, FsFile& file, std::string& filename);
-void renderWallpaperBitmap(GfxRenderer& renderer, const Bitmap& bitmap, bool crop);
+void renderWallpaperBitmap(GfxRenderer& renderer, const Bitmap& bitmap, bool crop, uint8_t filter = 0);

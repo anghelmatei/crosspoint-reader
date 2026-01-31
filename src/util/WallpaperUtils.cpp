@@ -4,6 +4,8 @@
 #include <GfxRenderer.h>
 #include <HardwareSerial.h>
 
+#include "CrossPointSettings.h"
+
 bool listCustomWallpapers(std::vector<std::string>& files) {
   files.clear();
 
@@ -57,7 +59,7 @@ bool openCustomWallpaperFile(const size_t index, FsFile& file, std::string& file
   return SdMan.openFileForRead("WAL", filename, file);
 }
 
-void renderWallpaperBitmap(GfxRenderer& renderer, const Bitmap& bitmap, const bool crop) {
+void renderWallpaperBitmap(GfxRenderer& renderer, const Bitmap& bitmap, const bool crop, const uint8_t filter) {
   int x = 0;
   int y = 0;
   const auto pageWidth = renderer.getScreenWidth();
@@ -90,10 +92,19 @@ void renderWallpaperBitmap(GfxRenderer& renderer, const Bitmap& bitmap, const bo
   }
 
   renderer.clearScreen();
-  renderer.drawBitmap(bitmap, x, y, pageWidth, pageHeight, cropX, cropY);
-  renderer.displayBuffer(EInkDisplay::HALF_REFRESH);
 
-  if (bitmap.hasGreyscale()) {
+  const bool hasGreyscale = bitmap.hasGreyscale() &&
+                            filter == CrossPointSettings::SLEEP_SCREEN_COVER_FILTER::NO_FILTER;
+
+  renderer.drawBitmap(bitmap, x, y, pageWidth, pageHeight, cropX, cropY);
+
+  if (filter == CrossPointSettings::SLEEP_SCREEN_COVER_FILTER::INVERTED_BLACK_AND_WHITE) {
+    renderer.invertScreen();
+  }
+
+  renderer.displayBuffer(HalDisplay::HALF_REFRESH);
+
+  if (hasGreyscale) {
     bitmap.rewindToData();
     renderer.clearScreen(0x00);
     renderer.setRenderMode(GfxRenderer::GRAYSCALE_LSB);
