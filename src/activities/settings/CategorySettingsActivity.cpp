@@ -160,15 +160,16 @@ void CategorySettingsActivity::displayTaskLoop() {
 }
 
 void CategorySettingsActivity::render() const {
-  renderer.clearScreen();
+  const bool darkMode = SETTINGS.readerDarkMode;
+  renderer.clearScreen(darkMode ? 0x00 : 0xFF);
 
   const auto pageWidth = renderer.getScreenWidth();
   const auto pageHeight = renderer.getScreenHeight();
 
-  renderer.drawCenteredText(UI_12_FONT_ID, 15, categoryName, true, EpdFontFamily::BOLD);
+  renderer.drawCenteredText(UI_12_FONT_ID, 15, categoryName, !darkMode, EpdFontFamily::BOLD);
 
   // Draw selection highlight
-  renderer.fillRect(0, 60 + selectedSettingIndex * 30 - 2, pageWidth - 1, 30);
+  renderer.fillRect(0, 60 + selectedSettingIndex * 30 - 2, pageWidth - 1, 30, !darkMode);
 
   // Draw all settings
   for (int i = 0; i < settingsCount; i++) {
@@ -176,7 +177,8 @@ void CategorySettingsActivity::render() const {
     const bool isSelected = (i == selectedSettingIndex);
 
     // Draw setting name
-    renderer.drawText(UI_10_FONT_ID, 20, settingY, settingsList[i].name, !isSelected);
+    const bool textColor = darkMode ? isSelected : !isSelected;
+    renderer.drawText(UI_10_FONT_ID, 20, settingY, settingsList[i].name, textColor);
 
     // Draw value based on setting type
     std::string valueText;
@@ -191,15 +193,15 @@ void CategorySettingsActivity::render() const {
     }
     if (!valueText.empty()) {
       const auto width = renderer.getTextWidth(UI_10_FONT_ID, valueText.c_str());
-      renderer.drawText(UI_10_FONT_ID, pageWidth - 20 - width, settingY, valueText.c_str(), !isSelected);
+      renderer.drawText(UI_10_FONT_ID, pageWidth - 20 - width, settingY, valueText.c_str(), textColor);
     }
   }
 
   renderer.drawText(SMALL_FONT_ID, pageWidth - 20 - renderer.getTextWidth(SMALL_FONT_ID, CROSSPOINT_VERSION),
-                    pageHeight - 60, CROSSPOINT_VERSION);
+                    pageHeight - 60, CROSSPOINT_VERSION, !darkMode);
 
   const auto labels = mappedInput.mapLabels("« Back", "Toggle", "", "");
-  renderer.drawButtonHints(UI_10_FONT_ID, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+  renderer.drawButtonHints(UI_10_FONT_ID, labels.btn1, labels.btn2, labels.btn3, labels.btn4, !darkMode);
 
   renderer.displayBuffer();
 }

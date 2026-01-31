@@ -3,6 +3,7 @@
 #include <GfxRenderer.h>
 #include <WiFi.h>
 
+#include "CrossPointSettings.h"
 #include "KOReaderCredentialStore.h"
 #include "KOReaderSyncClient.h"
 #include "MappedInputManager.h"
@@ -122,31 +123,32 @@ void KOReaderAuthActivity::render() {
     return;
   }
 
-  renderer.clearScreen();
-  renderer.drawCenteredText(UI_12_FONT_ID, 15, "KOReader Auth", true, EpdFontFamily::BOLD);
+  const bool darkMode = SETTINGS.readerDarkMode;
+  renderer.clearScreen(darkMode ? 0x00 : 0xFF);
+  renderer.drawCenteredText(UI_12_FONT_ID, 15, "KOReader Auth", !darkMode, EpdFontFamily::BOLD);
 
   if (state == AUTHENTICATING) {
-    renderer.drawCenteredText(UI_10_FONT_ID, 300, statusMessage.c_str(), true, EpdFontFamily::BOLD);
+    renderer.drawCenteredText(UI_10_FONT_ID, 300, statusMessage.c_str(), !darkMode, EpdFontFamily::BOLD);
     renderer.displayBuffer();
     return;
   }
 
   if (state == SUCCESS) {
-    renderer.drawCenteredText(UI_10_FONT_ID, 280, "Success!", true, EpdFontFamily::BOLD);
-    renderer.drawCenteredText(UI_10_FONT_ID, 320, "KOReader sync is ready to use");
+    renderer.drawCenteredText(UI_10_FONT_ID, 280, "Success!", !darkMode, EpdFontFamily::BOLD);
+    renderer.drawCenteredText(UI_10_FONT_ID, 320, "KOReader sync is ready to use", !darkMode);
 
     const auto labels = mappedInput.mapLabels("Done", "", "", "");
-    renderer.drawButtonHints(UI_10_FONT_ID, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+    renderer.drawButtonHints(UI_10_FONT_ID, labels.btn1, labels.btn2, labels.btn3, labels.btn4, !darkMode);
     renderer.displayBuffer();
     return;
   }
 
   if (state == FAILED) {
-    renderer.drawCenteredText(UI_10_FONT_ID, 280, "Authentication Failed", true, EpdFontFamily::BOLD);
-    renderer.drawCenteredText(UI_10_FONT_ID, 320, errorMessage.c_str());
+    renderer.drawCenteredText(UI_10_FONT_ID, 280, "Authentication Failed", !darkMode, EpdFontFamily::BOLD);
+    renderer.drawCenteredText(UI_10_FONT_ID, 320, errorMessage.c_str(), !darkMode);
 
     const auto labels = mappedInput.mapLabels("Back", "", "", "");
-    renderer.drawButtonHints(UI_10_FONT_ID, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+    renderer.drawButtonHints(UI_10_FONT_ID, labels.btn1, labels.btn2, labels.btn3, labels.btn4, !darkMode);
     renderer.displayBuffer();
     return;
   }

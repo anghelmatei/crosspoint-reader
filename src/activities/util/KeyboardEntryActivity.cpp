@@ -1,5 +1,6 @@
 #include "KeyboardEntryActivity.h"
 
+#include "CrossPointSettings.h"
 #include "MappedInputManager.h"
 #include "fontIds.h"
 
@@ -249,16 +250,17 @@ void KeyboardEntryActivity::loop() {
 
 void KeyboardEntryActivity::render() const {
   const auto pageWidth = renderer.getScreenWidth();
+    const bool darkMode = SETTINGS.readerDarkMode;
 
-  renderer.clearScreen();
+    renderer.clearScreen(darkMode ? 0x00 : 0xFF);
 
   // Draw title
-  renderer.drawCenteredText(UI_10_FONT_ID, startY, title.c_str());
+  renderer.drawCenteredText(UI_10_FONT_ID, startY, title.c_str(), !darkMode);
 
   // Draw input field
   const int inputStartY = startY + 22;
   int inputEndY = startY + 22;
-  renderer.drawText(UI_10_FONT_ID, 10, inputStartY, "[");
+    renderer.drawText(UI_10_FONT_ID, 10, inputStartY, "[", !darkMode);
 
   std::string displayText;
   if (isPassword) {
@@ -277,7 +279,7 @@ void KeyboardEntryActivity::render() const {
     std::string lineText = displayText.substr(lineStartIdx, lineEndIdx - lineStartIdx);
     const int textWidth = renderer.getTextWidth(UI_10_FONT_ID, lineText.c_str());
     if (textWidth <= pageWidth - 40) {
-      renderer.drawText(UI_10_FONT_ID, 20, inputEndY, lineText.c_str());
+      renderer.drawText(UI_10_FONT_ID, 20, inputEndY, lineText.c_str(), !darkMode);
       if (lineEndIdx == displayText.length()) {
         break;
       }
@@ -289,7 +291,7 @@ void KeyboardEntryActivity::render() const {
       lineEndIdx -= 1;
     }
   }
-  renderer.drawText(UI_10_FONT_ID, pageWidth - 15, inputEndY, "]");
+    renderer.drawText(UI_10_FONT_ID, pageWidth - 15, inputEndY, "]", !darkMode);
 
   // Draw keyboard - use compact spacing to fit 5 rows on screen
   const int keyboardStartY = inputEndY + 25;
@@ -354,20 +356,22 @@ void KeyboardEntryActivity::render() const {
 
   // Draw help text
   const auto labels = mappedInput.mapLabels("« Back", "Select", "Left", "Right");
-  renderer.drawButtonHints(UI_10_FONT_ID, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+    renderer.drawButtonHints(UI_10_FONT_ID, labels.btn1, labels.btn2, labels.btn3, labels.btn4, !darkMode);
 
   // Draw side button hints for Up/Down navigation
-  renderer.drawSideButtonHints(UI_10_FONT_ID, "Up", "Down");
+    renderer.drawSideButtonHints(UI_10_FONT_ID, "Up", "Down", !darkMode);
 
   renderer.displayBuffer();
 }
 
 void KeyboardEntryActivity::renderItemWithSelector(const int x, const int y, const char* item,
                                                    const bool isSelected) const {
+  const bool darkMode = SETTINGS.readerDarkMode;
+  const bool textColor = !darkMode;
   if (isSelected) {
     const int itemWidth = renderer.getTextWidth(UI_10_FONT_ID, item);
-    renderer.drawText(UI_10_FONT_ID, x - 6, y, "[");
-    renderer.drawText(UI_10_FONT_ID, x + itemWidth, y, "]");
+    renderer.drawText(UI_10_FONT_ID, x - 6, y, "[", textColor);
+    renderer.drawText(UI_10_FONT_ID, x + itemWidth, y, "]", textColor);
   }
-  renderer.drawText(UI_10_FONT_ID, x, y, item);
+  renderer.drawText(UI_10_FONT_ID, x, y, item, textColor);
 }

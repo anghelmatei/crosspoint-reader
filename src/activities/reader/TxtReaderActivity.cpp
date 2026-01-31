@@ -241,7 +241,7 @@ void TxtReaderActivity::buildPageIndex() {
   constexpr int boxMargin = 20;
   const bool fg = !SETTINGS.readerDarkMode;
   const bool bg = SETTINGS.readerDarkMode;
-  const int textWidth = renderer.getTextWidth(UI_12_FONT_ID, "Rotating...");
+  const int textWidth = renderer.getTextWidth(UI_12_FONT_ID, "Indexing...");
   const int boxWidth = (barWidth > textWidth ? barWidth : textWidth) + boxMargin * 2;
   const int boxHeight = renderer.getLineHeight(UI_12_FONT_ID) + barHeight + boxMargin * 3;
   const int boxX = (renderer.getScreenWidth() - boxWidth) / 2;
@@ -252,7 +252,7 @@ void TxtReaderActivity::buildPageIndex() {
   // Draw initial progress box
   renderer.setTextInverted(false);
   renderer.fillRect(boxX, boxY, boxWidth, boxHeight, bg);
-  renderer.drawText(UI_12_FONT_ID, boxX + boxMargin, boxY + boxMargin, "Rotating...", fg);
+  renderer.drawText(UI_12_FONT_ID, boxX + boxMargin, boxY + boxMargin, "Indexing...", fg);
   renderer.drawRect(boxX + 5, boxY + 5, boxWidth - 10, boxHeight - 10, fg);
   renderer.drawRect(barX, barY, barWidth, barHeight, fg);
   renderer.displayBuffer();
@@ -431,7 +431,7 @@ void TxtReaderActivity::renderScreen() {
   if (!initialized) {
     renderer.setTextInverted(false);
     renderer.clearScreen(SETTINGS.readerDarkMode ? 0x00 : 0xFF);
-    renderer.drawCenteredText(UI_12_FONT_ID, 300, "Rotating...", !SETTINGS.readerDarkMode, EpdFontFamily::BOLD);
+    renderer.drawCenteredText(UI_12_FONT_ID, 300, "Indexing...", !SETTINGS.readerDarkMode, EpdFontFamily::BOLD);
     renderer.displayBuffer();
     initializeReader();
   }
@@ -787,6 +787,10 @@ void TxtReaderActivity::cycleOrientationPreservePosition() {
     SETTINGS.orientation = CrossPointSettings::ORIENTATION::PORTRAIT;
     renderer.setOrientation(GfxRenderer::Orientation::Portrait);
   }
+  SETTINGS.sideButtonLayout =
+      (SETTINGS.sideButtonLayout == CrossPointSettings::SIDE_BUTTON_LAYOUT::PREV_NEXT)
+          ? CrossPointSettings::SIDE_BUTTON_LAYOUT::NEXT_PREV
+          : CrossPointSettings::SIDE_BUTTON_LAYOUT::PREV_NEXT;
   SETTINGS.saveToFile();
 
   initialized = false;

@@ -16,16 +16,28 @@ class SettingsActivity final : public ActivityWithSubactivity {
   TaskHandle_t displayTaskHandle = nullptr;
   SemaphoreHandle_t renderingMutex = nullptr;
   bool updateRequired = false;
-  int selectedCategoryIndex = 0;  // Currently selected category
+  int selectedItemIndex = 0;
   const std::function<void()> onGoHome;
 
-  static constexpr int categoryCount = 4;
-  static const char* categoryNames[categoryCount];
+  enum class SettingsItemType { Header, Setting };
+  struct SettingsItem {
+    SettingsItemType type;
+    const char* header;
+    const SettingInfo* setting;
+  };
+  std::vector<SettingsItem> settingsItems;
 
   static void taskTrampoline(void* param);
   [[noreturn]] void displayTaskLoop();
   void render() const;
-  void enterCategory(int categoryIndex);
+  void toggleCurrentSetting();
+  void buildSettingsItems();
+  int getPageItems() const;
+  int getTotalPages() const;
+  int getCurrentPage() const;
+  int findNextSelectableIndex(int startIndex, int direction) const;
+  bool isSelectableIndex(int index) const;
+  int getFirstSelectableIndex() const;
 
  public:
   explicit SettingsActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,

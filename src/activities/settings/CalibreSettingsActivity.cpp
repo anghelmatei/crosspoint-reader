@@ -148,25 +148,27 @@ void CalibreSettingsActivity::displayTaskLoop() {
 }
 
 void CalibreSettingsActivity::render() {
-  renderer.clearScreen();
+  const bool darkMode = SETTINGS.readerDarkMode;
+  renderer.clearScreen(darkMode ? 0x00 : 0xFF);
 
   const auto pageWidth = renderer.getScreenWidth();
 
   // Draw header
-  renderer.drawCenteredText(UI_12_FONT_ID, 15, "OPDS Browser", true, EpdFontFamily::BOLD);
+  renderer.drawCenteredText(UI_12_FONT_ID, 15, "OPDS Browser", !darkMode, EpdFontFamily::BOLD);
 
   // Draw info text about Calibre
-  renderer.drawCenteredText(UI_10_FONT_ID, 40, "For Calibre, add /opds to your URL");
+  renderer.drawCenteredText(UI_10_FONT_ID, 40, "For Calibre, add /opds to your URL", !darkMode);
 
   // Draw selection highlight
-  renderer.fillRect(0, 70 + selectedIndex * 30 - 2, pageWidth - 1, 30);
+  renderer.fillRect(0, 70 + selectedIndex * 30 - 2, pageWidth - 1, 30, !darkMode);
 
   // Draw menu items
   for (int i = 0; i < MENU_ITEMS; i++) {
     const int settingY = 70 + i * 30;
     const bool isSelected = (i == selectedIndex);
 
-    renderer.drawText(UI_10_FONT_ID, 20, settingY, menuNames[i], !isSelected);
+    const bool textColor = darkMode ? isSelected : !isSelected;
+    renderer.drawText(UI_10_FONT_ID, 20, settingY, menuNames[i], textColor);
 
     // Draw status for each setting
     const char* status = "[Not Set]";
@@ -178,12 +180,12 @@ void CalibreSettingsActivity::render() {
       status = (strlen(SETTINGS.opdsPassword) > 0) ? "[Set]" : "[Not Set]";
     }
     const auto width = renderer.getTextWidth(UI_10_FONT_ID, status);
-    renderer.drawText(UI_10_FONT_ID, pageWidth - 20 - width, settingY, status, !isSelected);
+    renderer.drawText(UI_10_FONT_ID, pageWidth - 20 - width, settingY, status, textColor);
   }
 
   // Draw button hints
   const auto labels = mappedInput.mapLabels("« Back", "Select", "", "");
-  renderer.drawButtonHints(UI_10_FONT_ID, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+  renderer.drawButtonHints(UI_10_FONT_ID, labels.btn1, labels.btn2, labels.btn3, labels.btn4, !darkMode);
 
   renderer.displayBuffer();
 }

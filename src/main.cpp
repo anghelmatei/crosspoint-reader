@@ -25,6 +25,7 @@
 #include "activities/settings/SettingsActivity.h"
 #include "activities/util/FullScreenMessageActivity.h"
 #include "fontIds.h"
+#include "images/CrossLarge.h"
 
 HalDisplay display;
 HalGPIO gpio;
@@ -147,38 +148,28 @@ void verifyPowerButtonDuration() {
     return;
   }
 
-  // Give the user up to 1000ms to start holding the power button, and must hold for SETTINGS.getPowerButtonDuration()
-  const auto start = millis();
-  bool abort = false;
-  // Subtract the current time, because inputManager only starts counting the HeldTime from the first update()
-  // This way, we remove the time we already took to reach here from the duration,
-  // assuming the button was held until now from millis()==0 (i.e. device start time).
-  const uint16_t calibration = start;
-  const uint16_t calibratedPressDuration =
-      (calibration < SETTINGS.getPowerButtonDuration()) ? SETTINGS.getPowerButtonDuration() - calibration : 1;
-
+  // Must hold for SETTINGS.getPowerButtonDuration() (match sleep timing)
+  const uint16_t requiredDuration = SETTINGS.getPowerButtonDuration();
   gpio.update();
-  // Needed because inputManager.isPressed() may take up to ~500ms to return the correct state
-  while (!gpio.isPressed(HalGPIO::BTN_POWER) && millis() - start < 1000) {
-    delay(10);  // only wait 10ms each iteration to not delay too much in case of short configured duration.
+  t2 = millis();
+
+  if (!gpio.isPressed(HalGPIO::BTN_POWER)) {
+    // Button already released - return to sleep
+    gpio.startDeepSleep();
+    return;
+  }
+
+  while (gpio.isPressed(HalGPIO::BTN_POWER) && gpio.getHeldTime() < requiredDuration) {
+    delay(10);
     gpio.update();
   }
 
-  t2 = millis();
-  if (gpio.isPressed(HalGPIO::BTN_POWER)) {
-    do {
-      delay(10);
-      gpio.update();
-    } while (gpio.isPressed(HalGPIO::BTN_POWER) && gpio.getHeldTime() < calibratedPressDuration);
-    abort = gpio.getHeldTime() < calibratedPressDuration;
-  } else {
-    abort = true;
-  }
-
-  if (abort) {
+  if (!gpio.isPressed(HalGPIO::BTN_POWER) || gpio.getHeldTime() < requiredDuration) {
     // Button released too early. Returning to sleep.
     // IMPORTANT: Re-arm the wakeup trigger before sleeping again
-    gpio.startDeepSleep();
+    if (!gpio.isUsbConnected()) {
+      gpio.startDeepSleep();
+    }
   }
 }
 
@@ -243,8 +234,8 @@ void onGoHome() {
 }
 
 void setupDisplayAndFonts() {
-  display.begin();
-  Serial.printf("[%lu] [   ] Display initialized\n", millis());
+  // Display and UI fonts already initialized early in setup() for boot screen
+  Serial.printf("[%lu] [   ] Loading additional fonts\n", millis());
   renderer.insertFont(BOOKERLY_14_FONT_ID, bookerly14FontFamily);
 #ifndef OMIT_FONTS
   renderer.insertFont(BOOKERLY_12_FONT_ID, bookerly12FontFamily);
@@ -260,10 +251,7 @@ void setupDisplayAndFonts() {
   renderer.insertFont(OPENDYSLEXIC_12_FONT_ID, opendyslexic12FontFamily);
   renderer.insertFont(OPENDYSLEXIC_14_FONT_ID, opendyslexic14FontFamily);
 #endif  // OMIT_FONTS
-  renderer.insertFont(UI_10_FONT_ID, ui10FontFamily);
-  renderer.insertFont(UI_12_FONT_ID, ui12FontFamily);
-  renderer.insertFont(SMALL_FONT_ID, smallFontFamily);
-  Serial.printf("[%lu] [   ] Fonts setup\n", millis());
+  Serial.printf("[%lu] [   ] Fonts setup complete\n", millis());
 }
 
 void setup() {
@@ -271,45 +259,78 @@ void setup() {
 
   gpio.begin();
 
-  // Only start serial if USB connected
-  if (gpio.isUsbConnected()) {
-    Serial.begin(115200);
-    // Wait up to 3 seconds for Serial to be ready to catch early logs
-    unsigned long start = millis();
-    while (!Serial && (millis() - start) < 3000) {
-      delay(10);
-    }
-  }
+  // Initialize display early so we can provide immediate visual feedback
+  // while verifying the power button hold duration. Use a fast refresh
+  // to avoid the long HALF_REFRESH delay.
+  display.begin();
+  renderer.insertFont(UI_10_FONT_ID, ui10FontFamily);
+  renderer.insertFont(UI_12_FONT_ID, ui12FontFamily);
+  renderer.insertFont(SMALL_FONT_ID, smallFontFamily);
 
-  // SD Card Initialization
-  // We need 6 open files concurrently when parsing a new chapter
-  if (!SdMan.begin()) {
-    Serial.printf("[%lu] [   ] SD card initialization failed\n", millis());
-    setupDisplayAndFonts();
-    exitActivity();
-    enterNewActivity(new FullScreenMessageActivity(renderer, mappedInputManager, "SD card error", EpdFontFamily::BOLD));
-    return;
-  }
+  if (gpio.isWakeupByPowerButton() && !gpio.isUsbConnected()) {
+    // Show a minimal "Opening..." indicator using FAST_REFRESH so user
+    // gets immediate feedback while we verify the hold duration.
+    const auto pageHeight = renderer.getScreenHeight();
+    renderer.clearScreen();
+    renderer.drawCenteredText(UI_12_FONT_ID, pageHeight / 2 - 10, "Opening...", true,
+                              EpdFontFamily::BOLD);
+    renderer.displayBuffer(HalDisplay::FAST_REFRESH);
 
-  SETTINGS.loadFromFile();
-  KOREADER_STORE.loadFromFile();
-
-  if (gpio.isWakeupByPowerButton()) {
-    // For normal wakeups, verify power button press duration
     Serial.printf("[%lu] [   ] Verifying power button press duration\n", millis());
     verifyPowerButtonDuration();
   }
 
-  // First serial output only here to avoid timing inconsistencies for power button press duration verification
-  Serial.printf("[%lu] [   ] Starting CrossPoint version " CROSSPOINT_VERSION "\n", millis());
+  // Only start serial if USB connected - reduced wait time
+  if (gpio.isUsbConnected()) {
+    Serial.begin(115200);
+    // Wait up to 500ms for Serial to be ready
+    unsigned long start = millis();
+    while (!Serial && (millis() - start) < 500) {
+      delay(10);
+    }
+  }
 
-  setupDisplayAndFonts();
+  // Initialize display early to show boot screen ASAP
+  display.begin();
+  renderer.insertFont(UI_10_FONT_ID, ui10FontFamily);
+  renderer.insertFont(UI_12_FONT_ID, ui12FontFamily);
+  renderer.insertFont(SMALL_FONT_ID, smallFontFamily);
 
-  exitActivity();
+  // SD Card Initialization first (needed for wallpaper)
+  // We need 6 open files concurrently when parsing a new chapter
+  if (!SdMan.begin()) {
+    Serial.printf("[%lu] [   ] SD card initialization failed\n", millis());
+    // Show error screen with default CrossPoint logo since we can't load wallpaper
+    const auto pageWidth = renderer.getScreenWidth();
+    const auto pageHeight = renderer.getScreenHeight();
+    renderer.clearScreen();
+    renderer.drawImage(CrossLarge, (pageWidth - 128) / 2, (pageHeight - 128) / 2, 128, 128);
+    renderer.drawCenteredText(UI_12_FONT_ID, pageHeight / 2 + 70, "SD Card Error", true, EpdFontFamily::BOLD);
+    renderer.displayBuffer(HalDisplay::HALF_REFRESH);
+    enterNewActivity(new FullScreenMessageActivity(renderer, mappedInputManager, "SD card error", EpdFontFamily::BOLD));
+    return;
+  }
+
+  // Load settings and app state early (needed for wallpaper selection)
+  SETTINGS.loadFromFile();
+  APP_STATE.loadFromFile();
+
+  // Now show boot screen with user's wallpaper + "Opening..." popup
   enterNewActivity(new BootActivity(renderer, mappedInputManager));
 
-  APP_STATE.loadFromFile();
+  // Load remaining stores
+  KOREADER_STORE.loadFromFile();
+
+  // First serial output
+  Serial.printf("[%lu] [   ] Starting CrossPoint version " CROSSPOINT_VERSION "\n", millis());
+
+  // Load remaining fonts
+  setupDisplayAndFonts();
+
   RECENT_BOOKS.loadFromFile();
+
+  // Exit boot activity before entering main activity
+  exitActivity();
 
   if (APP_STATE.openEpubPath.empty()) {
     onGoHome();

@@ -325,7 +325,7 @@ void EpubReaderActivity::renderScreen() {
       constexpr int boxMargin = 20;
       const bool fg = !SETTINGS.readerDarkMode;
       const bool bg = SETTINGS.readerDarkMode;
-      const int textWidth = renderer.getTextWidth(UI_12_FONT_ID, "Rotating...");
+      const int textWidth = renderer.getTextWidth(UI_12_FONT_ID, "Indexing...");
       const int boxWidthWithBar = (barWidth > textWidth ? barWidth : textWidth) + boxMargin * 2;
       const int boxWidthNoBar = textWidth + boxMargin * 2;
       const int boxHeightWithBar = renderer.getLineHeight(UI_12_FONT_ID) + barHeight + boxMargin * 3;
@@ -336,11 +336,11 @@ void EpubReaderActivity::renderScreen() {
       const int barX = boxXWithBar + (boxWidthWithBar - barWidth) / 2;
       const int barY = boxY + renderer.getLineHeight(UI_12_FONT_ID) + boxMargin * 2;
 
-      // Always show "Rotating..." text first
+      // Always show "Indexing..." text first
       {
         renderer.setTextInverted(false);
         renderer.fillRect(boxXNoBar, boxY, boxWidthNoBar, boxHeightNoBar, bg);
-        renderer.drawText(UI_12_FONT_ID, boxXNoBar + boxMargin, boxY + boxMargin, "Rotating...", fg);
+        renderer.drawText(UI_12_FONT_ID, boxXNoBar + boxMargin, boxY + boxMargin, "Indexing...", fg);
         renderer.drawRect(boxXNoBar + 5, boxY + 5, boxWidthNoBar - 10, boxHeightNoBar - 10, fg);
         renderer.displayBuffer();
         pagesUntilFullRefresh = 0;
@@ -352,7 +352,7 @@ void EpubReaderActivity::renderScreen() {
         const bool bg = SETTINGS.readerDarkMode;
         renderer.setTextInverted(false);
         renderer.fillRect(boxXWithBar, boxY, boxWidthWithBar, boxHeightWithBar, bg);
-        renderer.drawText(UI_12_FONT_ID, boxXWithBar + boxMargin, boxY + boxMargin, "Rotating...", fg);
+        renderer.drawText(UI_12_FONT_ID, boxXWithBar + boxMargin, boxY + boxMargin, "Indexing...", fg);
         renderer.drawRect(boxXWithBar + 5, boxY + 5, boxWidthWithBar - 10, boxHeightWithBar - 10, fg);
         renderer.drawRect(barX, barY, barWidth, barHeight, fg);
         renderer.displayBuffer();
@@ -636,6 +636,10 @@ void EpubReaderActivity::cycleOrientationPreservePosition() {
     SETTINGS.orientation = CrossPointSettings::ORIENTATION::PORTRAIT;
     renderer.setOrientation(GfxRenderer::Orientation::Portrait);
   }
+  SETTINGS.sideButtonLayout =
+      (SETTINGS.sideButtonLayout == CrossPointSettings::SIDE_BUTTON_LAYOUT::PREV_NEXT)
+          ? CrossPointSettings::SIDE_BUTTON_LAYOUT::NEXT_PREV
+          : CrossPointSettings::SIDE_BUTTON_LAYOUT::PREV_NEXT;
   SETTINGS.saveToFile();
 
   currentSpineIndex = targetSpineIndex;

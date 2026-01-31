@@ -5,6 +5,7 @@
 #include <WiFi.h>
 #include <esp_task_wdt.h>
 
+#include "CrossPointSettings.h"
 #include "MappedInputManager.h"
 #include "ScreenComponents.h"
 #include "WifiSelectionActivity.h"
@@ -201,19 +202,22 @@ void CalibreConnectActivity::displayTaskLoop() {
 }
 
 void CalibreConnectActivity::render() const {
+  const bool darkMode = SETTINGS.readerDarkMode;
   if (state == CalibreConnectState::SERVER_RUNNING) {
-    renderer.clearScreen();
+    renderer.clearScreen(darkMode ? 0x00 : 0xFF);
     renderServerRunning();
     renderer.displayBuffer();
     return;
   }
 
-  renderer.clearScreen();
+  renderer.clearScreen(darkMode ? 0x00 : 0xFF);
   const auto pageHeight = renderer.getScreenHeight();
   if (state == CalibreConnectState::SERVER_STARTING) {
-    renderer.drawCenteredText(UI_12_FONT_ID, pageHeight / 2 - 20, "Starting Calibre...", true, EpdFontFamily::BOLD);
+    renderer.drawCenteredText(UI_12_FONT_ID, pageHeight / 2 - 20, "Starting Calibre...", !darkMode,
+                              EpdFontFamily::BOLD);
   } else if (state == CalibreConnectState::ERROR) {
-    renderer.drawCenteredText(UI_12_FONT_ID, pageHeight / 2 - 20, "Calibre setup failed", true, EpdFontFamily::BOLD);
+    renderer.drawCenteredText(UI_12_FONT_ID, pageHeight / 2 - 20, "Calibre setup failed", !darkMode,
+                              EpdFontFamily::BOLD);
   }
   renderer.displayBuffer();
 }
@@ -223,28 +227,29 @@ void CalibreConnectActivity::renderServerRunning() const {
   constexpr int SMALL_SPACING = 20;
   constexpr int SECTION_SPACING = 40;
   constexpr int TOP_PADDING = 14;
-  renderer.drawCenteredText(UI_12_FONT_ID, 15, "Connect to Calibre", true, EpdFontFamily::BOLD);
+  const bool darkMode = SETTINGS.readerDarkMode;
+  renderer.drawCenteredText(UI_12_FONT_ID, 15, "Connect to Calibre", !darkMode, EpdFontFamily::BOLD);
 
   int y = 55 + TOP_PADDING;
-  renderer.drawCenteredText(UI_10_FONT_ID, y, "Network", true, EpdFontFamily::BOLD);
+  renderer.drawCenteredText(UI_10_FONT_ID, y, "Network", !darkMode, EpdFontFamily::BOLD);
   y += LINE_SPACING;
   std::string ssidInfo = "Network: " + connectedSSID;
   if (ssidInfo.length() > 28) {
     ssidInfo.replace(25, ssidInfo.length() - 25, "...");
   }
-  renderer.drawCenteredText(UI_10_FONT_ID, y, ssidInfo.c_str());
-  renderer.drawCenteredText(UI_10_FONT_ID, y + LINE_SPACING, ("IP: " + connectedIP).c_str());
+  renderer.drawCenteredText(UI_10_FONT_ID, y, ssidInfo.c_str(), !darkMode);
+  renderer.drawCenteredText(UI_10_FONT_ID, y + LINE_SPACING, ("IP: " + connectedIP).c_str(), !darkMode);
 
   y += LINE_SPACING * 2 + SECTION_SPACING;
-  renderer.drawCenteredText(UI_10_FONT_ID, y, "Setup", true, EpdFontFamily::BOLD);
+  renderer.drawCenteredText(UI_10_FONT_ID, y, "Setup", !darkMode, EpdFontFamily::BOLD);
   y += LINE_SPACING;
-  renderer.drawCenteredText(SMALL_FONT_ID, y, "1) Install CrossPoint Reader plugin");
-  renderer.drawCenteredText(SMALL_FONT_ID, y + SMALL_SPACING, "2) Be on the same WiFi network");
-  renderer.drawCenteredText(SMALL_FONT_ID, y + SMALL_SPACING * 2, "3) In Calibre: \"Send to device\"");
-  renderer.drawCenteredText(SMALL_FONT_ID, y + SMALL_SPACING * 3, "Keep this screen open while sending");
+  renderer.drawCenteredText(SMALL_FONT_ID, y, "1) Install CrossPoint Reader plugin", !darkMode);
+  renderer.drawCenteredText(SMALL_FONT_ID, y + SMALL_SPACING, "2) Be on the same WiFi network", !darkMode);
+  renderer.drawCenteredText(SMALL_FONT_ID, y + SMALL_SPACING * 2, "3) In Calibre: \"Send to device\"", !darkMode);
+  renderer.drawCenteredText(SMALL_FONT_ID, y + SMALL_SPACING * 3, "Keep this screen open while sending", !darkMode);
 
   y += SMALL_SPACING * 3 + SECTION_SPACING;
-  renderer.drawCenteredText(UI_10_FONT_ID, y, "Status", true, EpdFontFamily::BOLD);
+  renderer.drawCenteredText(UI_10_FONT_ID, y, "Status", !darkMode, EpdFontFamily::BOLD);
   y += LINE_SPACING;
   if (lastProgressTotal > 0 && lastProgressReceived <= lastProgressTotal) {
     std::string label = "Receiving";
@@ -254,7 +259,7 @@ void CalibreConnectActivity::renderServerRunning() const {
         label.replace(31, label.length() - 31, "...");
       }
     }
-    renderer.drawCenteredText(SMALL_FONT_ID, y, label.c_str());
+    renderer.drawCenteredText(SMALL_FONT_ID, y, label.c_str(), !darkMode);
     constexpr int barWidth = 300;
     constexpr int barHeight = 16;
     constexpr int barX = (480 - barWidth) / 2;
@@ -268,9 +273,9 @@ void CalibreConnectActivity::renderServerRunning() const {
     if (msg.length() > 36) {
       msg.replace(33, msg.length() - 33, "...");
     }
-    renderer.drawCenteredText(SMALL_FONT_ID, y, msg.c_str());
+    renderer.drawCenteredText(SMALL_FONT_ID, y, msg.c_str(), !darkMode);
   }
 
   const auto labels = mappedInput.mapLabels("« Exit", "", "", "");
-  renderer.drawButtonHints(UI_10_FONT_ID, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+  renderer.drawButtonHints(UI_10_FONT_ID, labels.btn1, labels.btn2, labels.btn3, labels.btn4, !darkMode);
 }

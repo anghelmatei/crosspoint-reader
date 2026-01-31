@@ -2,17 +2,16 @@
 
 #include <GfxRenderer.h>
 
+#include "CrossPointSettings.h"
 #include "MappedInputManager.h"
 #include "fontIds.h"
 
 namespace {
 constexpr int MENU_ITEM_COUNT = 3;
+constexpr int LINE_HEIGHT = 30;
+constexpr int CONTENT_START_Y = 60;
+
 const char* MENU_ITEMS[MENU_ITEM_COUNT] = {"Join a Network", "Connect to Calibre", "Create Hotspot"};
-const char* MENU_DESCRIPTIONS[MENU_ITEM_COUNT] = {
-    "Connect to an existing WiFi network",
-    "Use Calibre wireless device transfers",
-    "Create a WiFi network others can join",
-};
 }  // namespace
 
 void NetworkModeSelectionActivity::taskTrampoline(void* param) {
@@ -99,39 +98,29 @@ void NetworkModeSelectionActivity::displayTaskLoop() {
 }
 
 void NetworkModeSelectionActivity::render() const {
-  renderer.clearScreen();
+  const bool darkMode = SETTINGS.readerDarkMode;
+  renderer.clearScreen(darkMode ? 0x00 : 0xFF);
 
   const auto pageWidth = renderer.getScreenWidth();
-  const auto pageHeight = renderer.getScreenHeight();
 
   // Draw header
-  renderer.drawCenteredText(UI_12_FONT_ID, 15, "File Transfer", true, EpdFontFamily::BOLD);
+  renderer.drawCenteredText(UI_12_FONT_ID, 15, "File Transfer", !darkMode, EpdFontFamily::BOLD);
 
-  // Draw subtitle
-  renderer.drawCenteredText(UI_10_FONT_ID, 50, "How would you like to connect?");
+  // Draw selection highlight
+  renderer.fillRect(0, CONTENT_START_Y + selectedIndex * LINE_HEIGHT - 2, pageWidth - 1, LINE_HEIGHT, !darkMode);
 
-  // Draw menu items centered on screen
-  constexpr int itemHeight = 50;  // Height for each menu item (including description)
-  const int startY = (pageHeight - (MENU_ITEM_COUNT * itemHeight)) / 2 + 10;
-
+  // Draw menu items as list
   for (int i = 0; i < MENU_ITEM_COUNT; i++) {
-    const int itemY = startY + i * itemHeight;
+    const int itemY = CONTENT_START_Y + i * LINE_HEIGHT;
     const bool isSelected = (i == selectedIndex);
+    const bool textColor = darkMode ? isSelected : !isSelected;
 
-    // Draw selection highlight (black fill) for selected item
-    if (isSelected) {
-      renderer.fillRect(20, itemY - 2, pageWidth - 40, itemHeight - 6);
-    }
-
-    // Draw text: black=false (white text) when selected (on black background)
-    //            black=true (black text) when not selected (on white background)
-    renderer.drawText(UI_10_FONT_ID, 30, itemY, MENU_ITEMS[i], /*black=*/!isSelected);
-    renderer.drawText(SMALL_FONT_ID, 30, itemY + 22, MENU_DESCRIPTIONS[i], /*black=*/!isSelected);
+    renderer.drawText(UI_10_FONT_ID, 20, itemY, MENU_ITEMS[i], textColor);
   }
 
   // Draw help text at bottom
-  const auto labels = mappedInput.mapLabels("« Back", "Select", "", "");
-  renderer.drawButtonHints(UI_10_FONT_ID, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+  const auto labels = mappedInput.mapLabels("\u00ab Back", "Select", "Up", "Down");
+  renderer.drawButtonHints(UI_10_FONT_ID, labels.btn1, labels.btn2, labels.btn3, labels.btn4, !darkMode);
 
   renderer.displayBuffer();
 }

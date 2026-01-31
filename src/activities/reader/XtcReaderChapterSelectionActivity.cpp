@@ -2,6 +2,7 @@
 
 #include <GfxRenderer.h>
 
+#include "CrossPointSettings.h"
 #include "MappedInputManager.h"
 #include "fontIds.h"
 
@@ -128,29 +129,35 @@ void XtcReaderChapterSelectionActivity::displayTaskLoop() {
 }
 
 void XtcReaderChapterSelectionActivity::renderScreen() {
-  renderer.clearScreen();
+  const bool darkMode = SETTINGS.readerDarkMode;
+  renderer.setTextInverted(false);
+  renderer.clearScreen(darkMode ? 0x00 : 0xFF);
 
   const auto pageWidth = renderer.getScreenWidth();
   const int pageItems = getPageItems();
-  renderer.drawCenteredText(UI_12_FONT_ID, 15, "Select Chapter", true, EpdFontFamily::BOLD);
+  renderer.drawCenteredText(UI_12_FONT_ID, 15, "Select Chapter", !darkMode, EpdFontFamily::BOLD);
 
   const auto& chapters = xtc->getChapters();
   if (chapters.empty()) {
-    renderer.drawCenteredText(UI_10_FONT_ID, 120, "No chapters");
+    renderer.drawCenteredText(UI_10_FONT_ID, 120, "No chapters", !darkMode);
     renderer.displayBuffer();
     return;
   }
 
   const auto pageStartIndex = selectorIndex / pageItems * pageItems;
-  renderer.fillRect(0, 60 + (selectorIndex % pageItems) * 30 - 2, pageWidth - 1, 30);
+  renderer.fillRect(0, 60 + (selectorIndex % pageItems) * 30 - 2, pageWidth - 1, 30, !darkMode);
   for (int i = pageStartIndex; i < static_cast<int>(chapters.size()) && i < pageStartIndex + pageItems; i++) {
     const auto& chapter = chapters[i];
     const char* title = chapter.name.empty() ? "Unnamed" : chapter.name.c_str();
-    renderer.drawText(UI_10_FONT_ID, 20, 60 + (i % pageItems) * 30, title, i != selectorIndex);
+    const bool isSelected = (i == selectorIndex);
+    // In dark mode: unselected = white text, selected = black text
+    // In light mode: unselected = black text, selected = white text
+    const bool textColor = isSelected ? darkMode : !darkMode;
+    renderer.drawText(UI_10_FONT_ID, 20, 60 + (i % pageItems) * 30, title, textColor);
   }
 
   const auto labels = mappedInput.mapLabels("« Back", "Select", "Up", "Down");
-  renderer.drawButtonHints(UI_10_FONT_ID, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+  renderer.drawButtonHints(UI_10_FONT_ID, labels.btn1, labels.btn2, labels.btn3, labels.btn4, !darkMode);
 
   renderer.displayBuffer();
 }

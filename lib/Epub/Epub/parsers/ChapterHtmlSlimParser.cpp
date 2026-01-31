@@ -28,7 +28,7 @@ constexpr int NUM_BOLD_TAGS = sizeof(BOLD_TAGS) / sizeof(BOLD_TAGS[0]);
 const char* ITALIC_TAGS[] = {"i", "em"};
 constexpr int NUM_ITALIC_TAGS = sizeof(ITALIC_TAGS) / sizeof(ITALIC_TAGS[0]);
 
-const char* IMAGE_TAGS[] = {"img"};
+const char* IMAGE_TAGS[] = {"img", "image"};
 constexpr int NUM_IMAGE_TAGS = sizeof(IMAGE_TAGS) / sizeof(IMAGE_TAGS[0]);
 
 const char* SKIP_TAGS[] = {"head"};
@@ -320,6 +320,8 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
       for (int i = 0; atts[i]; i += 2) {
         if (strcmp(atts[i], "src") == 0) {
           src = atts[i + 1];
+        } else if (strcmp(atts[i], "href") == 0 || strcmp(atts[i], "xlink:href") == 0) {
+          src = atts[i + 1];
         } else if (strcmp(atts[i], "alt") == 0) {
           alt = atts[i + 1];
         }
@@ -330,10 +332,15 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
     if (!handled) {
       const std::string altText = alt.empty() ? "[Image]" : "[Image: " + alt + "]";
       Serial.printf("[%lu] [EHP] Image fallback: %s\n", millis(), altText.c_str());
-      self->startNewTextBlock(TextBlock::CENTER_ALIGN);
-      self->italicUntilDepth = min(self->italicUntilDepth, self->depth);
+      if (!self->currentTextBlock) {
+        self->currentTextBlock.reset(new ParsedText((TextBlock::Style)self->paragraphAlignment,
+                                                    self->extraParagraphSpacing, self->hyphenationEnabled));
+      }
+      if (self->partWordBufferIndex > 0) {
+        self->flushPartWordBuffer();
+      }
+      self->currentTextBlock->addWord(altText, EpdFontFamily::ITALIC);
       self->depth += 1;
-      self->characterData(userData, altText.c_str(), altText.length());
       return;
     }
 

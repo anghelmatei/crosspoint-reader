@@ -5,6 +5,7 @@
 
 #include <algorithm>
 
+#include "CrossPointSettings.h"
 #include "MappedInputManager.h"
 #include "RecentBooksStore.h"
 #include "ScreenComponents.h"
@@ -13,10 +14,8 @@
 
 namespace {
 // Layout constants
-constexpr int TAB_BAR_Y = 15;
 constexpr int CONTENT_START_Y = 60;
 constexpr int LINE_HEIGHT = 30;
-constexpr int RECENTS_LINE_HEIGHT = 65;  // Increased for two-line items
 constexpr int LEFT_MARGIN = 20;
 constexpr int RIGHT_MARGIN = 40;  // Extra space for scroll indicator
 
@@ -47,10 +46,7 @@ int MyLibraryActivity::getPageItems() const {
 }
 
 int MyLibraryActivity::getCurrentItemCount() const {
-  if (currentTab == Tab::Recent) {
-    return static_cast<int>(recentBooks.size());
-  }
-  return static_cast<int>(files.size());
+  return static_cast<int>(items.size());
 }
 
 int MyLibraryActivity::getTotalPages() const {
@@ -63,6 +59,46 @@ int MyLibraryActivity::getTotalPages() const {
 int MyLibraryActivity::getCurrentPage() const {
   const int pageItems = getPageItems();
   return selectorIndex / pageItems + 1;
+}
+
+int MyLibraryActivity::getFirstSelectableIndex() const {
+  for (size_t i = 0; i < items.size(); i++) {
+    if (items[i].type == LibraryItemType::Recent || items[i].type == LibraryItemType::File) {
+      return static_cast<int>(i);
+    }
+  }
+  return 0;
+}
+
+bool MyLibraryActivity::isSelectableIndex(const int index) const {
+  if (index < 0 || index >= static_cast<int>(items.size())) {
+    return false;
+  }
+  return items[index].type == LibraryItemType::Recent || items[index].type == LibraryItemType::File;
+}
+
+int MyLibraryActivity::findNextSelectableIndex(const int startIndex, const int direction) const {
+  const int itemCount = static_cast<int>(items.size());
+  if (itemCount == 0) {
+    return startIndex;
+  }
+  int index = startIndex;
+  for (int i = 0; i < itemCount; i++) {
+    index = (index + direction + itemCount) % itemCount;
+    if (isSelectableIndex(index)) {
+      return index;
+    }
+  }
+  return startIndex;
+}
+
+int MyLibraryActivity::findItemIndexForFileIndex(const size_t fileIndex) const {
+  for (size_t i = 0; i < items.size(); i++) {
+    if (items[i].type == LibraryItemType::File && static_cast<size_t>(items[i].index) == fileIndex) {
+      return static_cast<int>(i);
+    }
+  }
+  return getFirstSelectableIndex();
 }
 
 void MyLibraryActivity::loadRecentBooks() {
@@ -113,6 +149,29 @@ void MyLibraryActivity::loadFiles() {
   sortFileList(files);
 }
 
+void MyLibraryActivity::rebuildItemList() {
+  items.clear();
+  items.reserve(recentBooks.size() + files.size() + 4);
+
+  items.push_back({LibraryItemType::Header, -1, "Recent"});
+  if (recentBooks.empty()) {
+    items.push_back({LibraryItemType::Placeholder, -1, "No recent books"});
+  } else {
+    for (size_t i = 0; i < recentBooks.size(); i++) {
+      items.push_back({LibraryItemType::Recent, static_cast<int>(i), nullptr});
+    }
+  }
+
+  items.push_back({LibraryItemType::Header, -1, "All Books"});
+  if (files.empty()) {
+    items.push_back({LibraryItemType::Placeholder, -1, "No books found"});
+  } else {
+    for (size_t i = 0; i < files.size(); i++) {
+      items.push_back({LibraryItemType::File, static_cast<int>(i), nullptr});
+    }
+  }
+}
+
 size_t MyLibraryActivity::findEntry(const std::string& name) const {
   for (size_t i = 0; i < files.size(); i++) {
     if (files[i] == name) return i;
@@ -130,11 +189,17 @@ void MyLibraryActivity::onEnter() {
 
   renderingMutex = xSemaphoreCreateMutex();
 
-  // Load data for both tabs
+  // Load data for both sections
   loadRecentBooks();
   loadFiles();
 
-  selectorIndex = 0;
+  rebuildItemList();
+
+  if (currentTab == Tab::Files) {
+    selectorIndex = findItemIndexForFileIndex(0);
+  } else {
+    selectorIndex = getFirstSelectableIndex();
+  }
   updateRequired = true;
 
   xTaskCreate(&MyLibraryActivity::taskTrampoline, "MyLibraryActivityTask",
@@ -165,44 +230,43 @@ void MyLibraryActivity::loop() {
   const int itemCount = getCurrentItemCount();
   const int pageItems = getPageItems();
 
-  // Long press BACK (1s+) in Files tab goes to root folder
-  if (currentTab == Tab::Files && mappedInput.isPressed(MappedInputManager::Button::Back) &&
-      mappedInput.getHeldTime() >= GO_HOME_MS) {
+  // Long press BACK (1s+) goes to root folder
+  if (mappedInput.isPressed(MappedInputManager::Button::Back) && mappedInput.getHeldTime() >= GO_HOME_MS) {
     if (basepath != "/") {
       basepath = "/";
       loadFiles();
-      selectorIndex = 0;
+      rebuildItemList();
+      selectorIndex = getFirstSelectableIndex();
       updateRequired = true;
     }
     return;
   }
 
-  const bool upReleased = mappedInput.wasReleased(MappedInputManager::Button::Up);
-  const bool downReleased = mappedInput.wasReleased(MappedInputManager::Button::Down);
-  const bool leftReleased = mappedInput.wasReleased(MappedInputManager::Button::Left);
-  const bool rightReleased = mappedInput.wasReleased(MappedInputManager::Button::Right);
+  const bool upReleased = mappedInput.wasReleased(MappedInputManager::Button::Up) ||
+                          mappedInput.wasReleased(MappedInputManager::Button::Left);
+  const bool downReleased = mappedInput.wasReleased(MappedInputManager::Button::Down) ||
+                            mappedInput.wasReleased(MappedInputManager::Button::Right);
 
   const bool skipPage = mappedInput.getHeldTime() > SKIP_PAGE_MS;
 
   // Confirm button - open selected item
   if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
-    if (currentTab == Tab::Recent) {
-      if (!recentBooks.empty() && selectorIndex < static_cast<int>(recentBooks.size())) {
-        onSelectBook(recentBooks[selectorIndex].path, currentTab);
-      }
-    } else {
-      // Files tab
-      if (!files.empty() && selectorIndex < static_cast<int>(files.size())) {
+    if (isSelectableIndex(selectorIndex)) {
+      const auto& item = items[selectorIndex];
+      if (item.type == LibraryItemType::Recent) {
+        const auto& book = recentBooks[static_cast<size_t>(item.index)];
+        onSelectBook(book.path, Tab::Recent);
+      } else if (item.type == LibraryItemType::File) {
+        const auto& fileName = files[static_cast<size_t>(item.index)];
         if (basepath.back() != '/') basepath += "/";
-        if (files[selectorIndex].back() == '/') {
-          // Enter directory
-          basepath += files[selectorIndex].substr(0, files[selectorIndex].length() - 1);
+        if (!fileName.empty() && fileName.back() == '/') {
+          basepath += fileName.substr(0, fileName.length() - 1);
           loadFiles();
-          selectorIndex = 0;
+          rebuildItemList();
+          selectorIndex = getFirstSelectableIndex();
           updateRequired = true;
         } else {
-          // Open file
-          onSelectBook(basepath + files[selectorIndex], currentTab);
+          onSelectBook(basepath + fileName, Tab::Files);
         }
       }
     }
@@ -212,17 +276,18 @@ void MyLibraryActivity::loop() {
   // Back button
   if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
     if (mappedInput.getHeldTime() < GO_HOME_MS) {
-      if (currentTab == Tab::Files && basepath != "/") {
+      if (basepath != "/") {
         // Go up one directory, remembering the directory we came from
         const std::string oldPath = basepath;
         basepath.replace(basepath.find_last_of('/'), std::string::npos, "");
         if (basepath.empty()) basepath = "/";
         loadFiles();
+        rebuildItemList();
 
         // Select the directory we just came from
         const auto pos = oldPath.find_last_of('/');
         const std::string dirName = oldPath.substr(pos + 1) + "/";
-        selectorIndex = static_cast<int>(findEntry(dirName));
+        selectorIndex = findItemIndexForFileIndex(findEntry(dirName));
 
         updateRequired = true;
       } else {
@@ -233,38 +298,24 @@ void MyLibraryActivity::loop() {
     return;
   }
 
-  // Tab switching: Left/Right always control tabs
-  if (leftReleased && currentTab == Tab::Files) {
-    currentTab = Tab::Recent;
-    selectorIndex = 0;
-    updateRequired = true;
-    return;
-  }
-  if (rightReleased && currentTab == Tab::Recent) {
-    currentTab = Tab::Files;
-    selectorIndex = 0;
-    updateRequired = true;
-    return;
-  }
-
   // Navigation: Up/Down moves through items only
   const bool prevReleased = upReleased;
   const bool nextReleased = downReleased;
 
-  if (prevReleased && itemCount > 0) {
+  if ((prevReleased || nextReleased) && itemCount > 0) {
+    int candidateIndex = selectorIndex;
     if (skipPage) {
-      selectorIndex = ((selectorIndex / pageItems - 1) * pageItems + itemCount) % itemCount;
+      const int pageDelta = prevReleased ? -1 : 1;
+      candidateIndex = ((selectorIndex / pageItems + pageDelta) * pageItems + itemCount) % itemCount;
+      candidateIndex = findNextSelectableIndex(candidateIndex, prevReleased ? -1 : 1);
     } else {
-      selectorIndex = (selectorIndex + itemCount - 1) % itemCount;
+      candidateIndex = findNextSelectableIndex(selectorIndex, prevReleased ? -1 : 1);
     }
-    updateRequired = true;
-  } else if (nextReleased && itemCount > 0) {
-    if (skipPage) {
-      selectorIndex = ((selectorIndex / pageItems + 1) * pageItems) % itemCount;
-    } else {
-      selectorIndex = (selectorIndex + 1) % itemCount;
+
+    if (candidateIndex != selectorIndex) {
+      selectorIndex = candidateIndex;
+      updateRequired = true;
     }
-    updateRequired = true;
   }
 }
 
@@ -281,102 +332,89 @@ void MyLibraryActivity::displayTaskLoop() {
 }
 
 void MyLibraryActivity::render() const {
-  renderer.clearScreen();
+  const bool darkMode = SETTINGS.readerDarkMode;
+  renderer.clearScreen(darkMode ? 0x00 : 0xFF);
 
-  // Draw tab bar
-  std::vector<TabInfo> tabs = {{"Recent", currentTab == Tab::Recent}, {"Bookshelf", currentTab == Tab::Files}};
-  ScreenComponents::drawTabBar(renderer, TAB_BAR_Y, tabs);
-
-  // Draw content based on current tab
-  if (currentTab == Tab::Recent) {
-    renderRecentTab();
-  } else {
-    renderFilesTab();
-  }
+  renderer.drawCenteredText(UI_12_FONT_ID, 15, "Bookshelf", !darkMode, EpdFontFamily::BOLD);
+  renderCombinedList();
 
   // Draw scroll indicator
   const int screenHeight = renderer.getScreenHeight();
   const int contentHeight = screenHeight - CONTENT_START_Y - 60;  // 60 for bottom bar
-  ScreenComponents::drawScrollIndicator(renderer, getCurrentPage(), getTotalPages(), CONTENT_START_Y, contentHeight);
+  ScreenComponents::drawScrollIndicator(renderer, getCurrentPage(), getTotalPages(), CONTENT_START_Y, contentHeight,
+                                        !darkMode);
 
   // Draw side button hints (up/down navigation on right side)
-  // Note: text is rotated 90° CW, so ">" appears as "^" and "<" appears as "v"
-  renderer.drawSideButtonHints(UI_10_FONT_ID, ">", "<");
+  renderer.drawSideButtonHints(UI_10_FONT_ID, ">", "<", !darkMode);
 
   // Draw bottom button hints
-  const auto labels = mappedInput.mapLabels("« Back", "Open", "<", ">");
-  renderer.drawButtonHints(UI_10_FONT_ID, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+  const auto labels = mappedInput.mapLabels("« Back", "Open", "Up", "Down");
+  renderer.drawButtonHints(UI_10_FONT_ID, labels.btn1, labels.btn2, labels.btn3, labels.btn4, !darkMode);
 
   renderer.displayBuffer();
 }
 
-void MyLibraryActivity::renderRecentTab() const {
+void MyLibraryActivity::renderCombinedList() const {
   const auto pageWidth = renderer.getScreenWidth();
   const int pageItems = getPageItems();
-  const int bookCount = static_cast<int>(recentBooks.size());
+  const int itemCount = static_cast<int>(items.size());
+  const bool darkMode = SETTINGS.readerDarkMode;
 
-  if (bookCount == 0) {
-    renderer.drawText(UI_10_FONT_ID, LEFT_MARGIN, CONTENT_START_Y, "No recent books");
+  if (itemCount == 0) {
+    renderer.drawText(UI_10_FONT_ID, LEFT_MARGIN, CONTENT_START_Y, "No books found", !darkMode);
     return;
   }
 
   const auto pageStartIndex = selectorIndex / pageItems * pageItems;
 
-  // Draw selection highlight
-  renderer.fillRect(0, CONTENT_START_Y + (selectorIndex % pageItems) * RECENTS_LINE_HEIGHT - 2,
-                    pageWidth - RIGHT_MARGIN, RECENTS_LINE_HEIGHT);
-
-  // Draw items
-  for (int i = pageStartIndex; i < bookCount && i < pageStartIndex + pageItems; i++) {
-    const auto& book = recentBooks[i];
-    const int y = CONTENT_START_Y + (i % pageItems) * RECENTS_LINE_HEIGHT;
-
-    // Line 1: Title
-    std::string title = book.title;
-    if (title.empty()) {
-      // Fallback for older entries or files without metadata
-      title = book.path;
-      const size_t lastSlash = title.find_last_of('/');
-      if (lastSlash != std::string::npos) {
-        title = title.substr(lastSlash + 1);
-      }
-      const size_t dot = title.find_last_of('.');
-      if (dot != std::string::npos) {
-        title.resize(dot);
-      }
-    }
-    auto truncatedTitle = renderer.truncatedText(UI_12_FONT_ID, title.c_str(), pageWidth - LEFT_MARGIN - RIGHT_MARGIN);
-    renderer.drawText(UI_12_FONT_ID, LEFT_MARGIN, y + 2, truncatedTitle.c_str(), i != selectorIndex);
-
-    // Line 2: Author
-    if (!book.author.empty()) {
-      auto truncatedAuthor =
-          renderer.truncatedText(UI_10_FONT_ID, book.author.c_str(), pageWidth - LEFT_MARGIN - RIGHT_MARGIN);
-      renderer.drawText(UI_10_FONT_ID, LEFT_MARGIN, y + 32, truncatedAuthor.c_str(), i != selectorIndex);
-    }
-  }
-}
-
-void MyLibraryActivity::renderFilesTab() const {
-  const auto pageWidth = renderer.getScreenWidth();
-  const int pageItems = getPageItems();
-  const int fileCount = static_cast<int>(files.size());
-
-  if (fileCount == 0) {
-    renderer.drawText(UI_10_FONT_ID, LEFT_MARGIN, CONTENT_START_Y, "No books found");
-    return;
+  if (isSelectableIndex(selectorIndex)) {
+    renderer.fillRect(0, CONTENT_START_Y + (selectorIndex - pageStartIndex) * LINE_HEIGHT - 2,
+                      pageWidth - RIGHT_MARGIN, LINE_HEIGHT, !darkMode);
   }
 
-  const auto pageStartIndex = selectorIndex / pageItems * pageItems;
+  for (int i = pageStartIndex; i < itemCount && i < pageStartIndex + pageItems; i++) {
+    const int y = CONTENT_START_Y + (i - pageStartIndex) * LINE_HEIGHT;
+    const auto& item = items[i];
 
-  // Draw selection highlight
-  renderer.fillRect(0, CONTENT_START_Y + (selectorIndex % pageItems) * LINE_HEIGHT - 2, pageWidth - RIGHT_MARGIN,
-                    LINE_HEIGHT);
+    if (item.type == LibraryItemType::Header) {
+      renderer.drawText(UI_10_FONT_ID, LEFT_MARGIN, y, item.label, !darkMode, EpdFontFamily::BOLD);
+      const int textWidth = renderer.getTextWidth(UI_10_FONT_ID, item.label, EpdFontFamily::BOLD);
+      const int lineStart = LEFT_MARGIN + textWidth + 10;
+      if (lineStart < pageWidth - RIGHT_MARGIN) {
+        renderer.drawLine(lineStart, y + 8, pageWidth - RIGHT_MARGIN, y + 8, !darkMode);
+      }
+      continue;
+    }
 
-  // Draw items
-  for (int i = pageStartIndex; i < fileCount && i < pageStartIndex + pageItems; i++) {
-    auto item = renderer.truncatedText(UI_10_FONT_ID, files[i].c_str(), pageWidth - LEFT_MARGIN - RIGHT_MARGIN);
-    renderer.drawText(UI_10_FONT_ID, LEFT_MARGIN, CONTENT_START_Y + (i % pageItems) * LINE_HEIGHT, item.c_str(),
-                      i != selectorIndex);
+    if (item.type == LibraryItemType::Placeholder) {
+      renderer.drawText(UI_10_FONT_ID, LEFT_MARGIN, y, item.label, !darkMode);
+      continue;
+    }
+
+    const bool isSelected = (i == selectorIndex);
+    const bool textColor = darkMode ? isSelected : !isSelected;
+    if (item.type == LibraryItemType::Recent) {
+      const auto& book = recentBooks[static_cast<size_t>(item.index)];
+      std::string title = book.title;
+      if (title.empty()) {
+        title = book.path;
+        const size_t lastSlash = title.find_last_of('/');
+        if (lastSlash != std::string::npos) {
+          title = title.substr(lastSlash + 1);
+        }
+        const size_t dot = title.find_last_of('.');
+        if (dot != std::string::npos) {
+          title.resize(dot);
+        }
+      }
+      auto truncatedTitle =
+          renderer.truncatedText(UI_10_FONT_ID, title.c_str(), pageWidth - LEFT_MARGIN - RIGHT_MARGIN);
+      renderer.drawText(UI_10_FONT_ID, LEFT_MARGIN, y, truncatedTitle.c_str(), textColor);
+    } else if (item.type == LibraryItemType::File) {
+      const auto& fileName = files[static_cast<size_t>(item.index)];
+      auto truncatedName =
+          renderer.truncatedText(UI_10_FONT_ID, fileName.c_str(), pageWidth - LEFT_MARGIN - RIGHT_MARGIN);
+      renderer.drawText(UI_10_FONT_ID, LEFT_MARGIN, y, truncatedName.c_str(), textColor);
+    }
   }
 }

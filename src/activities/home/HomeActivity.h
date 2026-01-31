@@ -21,6 +21,7 @@ class HomeActivity final : public Activity {
   std::string lastBookTitle;
   std::string lastBookAuthor;
   std::string coverBmpPath;
+  std::string continueReadingLabel;
   const std::function<void()> onContinueReading;
   const std::function<void()> onMyLibraryOpen;
   const std::function<void()> onSettingsOpen;

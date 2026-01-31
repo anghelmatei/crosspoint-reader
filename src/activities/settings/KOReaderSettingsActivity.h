@@ -6,6 +6,7 @@
 #include <functional>
 
 #include "activities/ActivityWithSubactivity.h"
+#include "CrossPointSettings.h"
 
 /**
  * Submenu for KOReader Sync settings.

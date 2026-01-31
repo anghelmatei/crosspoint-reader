@@ -15,6 +15,13 @@ class MyLibraryActivity final : public Activity {
   enum class Tab { Recent, Files };
 
  private:
+  enum class LibraryItemType { Header, Recent, File, Placeholder };
+  struct LibraryItem {
+    LibraryItemType type;
+    int index;
+    const char* label;
+  };
+
   TaskHandle_t displayTaskHandle = nullptr;
   SemaphoreHandle_t renderingMutex = nullptr;
 
@@ -29,6 +36,8 @@ class MyLibraryActivity final : public Activity {
   std::string basepath = "/";
   std::vector<std::string> files;
 
+  std::vector<LibraryItem> items;
+
   // Callbacks
   const std::function<void()> onGoHome;
   const std::function<void(const std::string& path, Tab fromTab)> onSelectBook;
@@ -38,18 +47,22 @@ class MyLibraryActivity final : public Activity {
   int getCurrentItemCount() const;
   int getTotalPages() const;
   int getCurrentPage() const;
+  int getFirstSelectableIndex() const;
+  int findNextSelectableIndex(int startIndex, int direction) const;
+  bool isSelectableIndex(int index) const;
+  int findItemIndexForFileIndex(size_t fileIndex) const;
 
   // Data loading
   void loadRecentBooks();
   void loadFiles();
+  void rebuildItemList();
   size_t findEntry(const std::string& name) const;
 
   // Rendering
   static void taskTrampoline(void* param);
   [[noreturn]] void displayTaskLoop();
   void render() const;
-  void renderRecentTab() const;
-  void renderFilesTab() const;
+  void renderCombinedList() const;
 
  public:
   explicit MyLibraryActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,

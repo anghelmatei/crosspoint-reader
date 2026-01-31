@@ -3,16 +3,28 @@
 #include <GfxRenderer.h>
 #include <HardwareSerial.h>
 
+#include <cstring>
+#include <string>
+#include <vector>
+
 #include "CategorySettingsActivity.h"
 #include "CrossPointSettings.h"
+#include "CrossPointState.h"
+#include "KOReaderSettingsActivity.h"
 #include "MappedInputManager.h"
+#include "OtaUpdateActivity.h"
+#include "CalibreSettingsActivity.h"
+#include "ClearCacheActivity.h"
 #include "fontIds.h"
-
-const char* SettingsActivity::categoryNames[categoryCount] = {"Display", "Reader", "Controls", "System"};
+#include "util/WallpaperUtils.h"
 
 namespace {
-constexpr int displaySettingsCount = 7;
+constexpr int SETTINGS_TOP_Y = 60;
+constexpr int LINE_HEIGHT = 30;
+
+constexpr int displaySettingsCount = 8;
 const SettingInfo displaySettings[displaySettingsCount] = {
+  SettingInfo::Toggle("Dark Mode", &CrossPointSettings::readerDarkMode),
     // Should match with SLEEP_SCREEN_MODE
     SettingInfo::Enum("Sleep Screen", &CrossPointSettings::sleepScreen, {"Dark", "Light", "Custom", "Cover", "None"}),
     SettingInfo::Enum("Sleep Screen Cover Mode", &CrossPointSettings::sleepScreenCoverMode, {"Fit", "Crop"}),
@@ -25,7 +37,7 @@ const SettingInfo displaySettings[displaySettingsCount] = {
     SettingInfo::Enum("Refresh Frequency", &CrossPointSettings::refreshFrequency,
                       {"1 page", "5 pages", "10 pages", "15 pages", "30 pages"})};
 
-constexpr int readerSettingsCount = 10;
+constexpr int readerSettingsCount = 9;
 const SettingInfo readerSettings[readerSettingsCount] = {
     SettingInfo::Enum("Font Family", &CrossPointSettings::fontFamily, {"Bookerly", "Noto Sans", "Open Dyslexic"}),
     SettingInfo::Enum("Font Size", &CrossPointSettings::fontSize, {"Small", "Medium", "Large", "X Large"}),
@@ -36,7 +48,6 @@ const SettingInfo readerSettings[readerSettingsCount] = {
     SettingInfo::Toggle("Hyphenation", &CrossPointSettings::hyphenationEnabled),
     SettingInfo::Enum("Reading Orientation", &CrossPointSettings::orientation,
                       {"Portrait", "Landscape CW", "Inverted", "Landscape CCW"}),
-  SettingInfo::Toggle("Dark Mode", &CrossPointSettings::readerDarkMode),
     SettingInfo::Toggle("Extra Paragraph Spacing", &CrossPointSettings::extraParagraphSpacing),
     SettingInfo::Toggle("Text Anti-Aliasing", &CrossPointSettings::textAntiAliasing)};
 
@@ -68,8 +79,8 @@ void SettingsActivity::onEnter() {
   Activity::onEnter();
   renderingMutex = xSemaphoreCreateMutex();
 
-  // Reset selection to first category
-  selectedCategoryIndex = 0;
+  buildSettingsItems();
+  selectedItemIndex = getFirstSelectableIndex();
 
   // Trigger first update
   updateRequired = true;
@@ -101,9 +112,10 @@ void SettingsActivity::loop() {
     return;
   }
 
-  // Handle category selection
+  // Handle setting selection
   if (mappedInput.wasPressed(MappedInputManager::Button::Confirm)) {
-    enterCategory(selectedCategoryIndex);
+    toggleCurrentSetting();
+    updateRequired = true;
     return;
   }
 
@@ -116,53 +128,175 @@ void SettingsActivity::loop() {
   // Handle navigation
   if (mappedInput.wasPressed(MappedInputManager::Button::Up) ||
       mappedInput.wasPressed(MappedInputManager::Button::Left)) {
-    // Move selection up (with wrap-around)
-    selectedCategoryIndex = (selectedCategoryIndex > 0) ? (selectedCategoryIndex - 1) : (categoryCount - 1);
-    updateRequired = true;
+    const int nextIndex = findNextSelectableIndex(selectedItemIndex, -1);
+    if (nextIndex != selectedItemIndex) {
+      selectedItemIndex = nextIndex;
+      updateRequired = true;
+    }
   } else if (mappedInput.wasPressed(MappedInputManager::Button::Down) ||
              mappedInput.wasPressed(MappedInputManager::Button::Right)) {
-    // Move selection down (with wrap around)
-    selectedCategoryIndex = (selectedCategoryIndex < categoryCount - 1) ? (selectedCategoryIndex + 1) : 0;
-    updateRequired = true;
+    const int nextIndex = findNextSelectableIndex(selectedItemIndex, 1);
+    if (nextIndex != selectedItemIndex) {
+      selectedItemIndex = nextIndex;
+      updateRequired = true;
+    }
   }
 }
 
-void SettingsActivity::enterCategory(int categoryIndex) {
-  if (categoryIndex < 0 || categoryIndex >= categoryCount) {
+void SettingsActivity::toggleCurrentSetting() {
+  if (!isSelectableIndex(selectedItemIndex)) {
     return;
   }
 
-  xSemaphoreTake(renderingMutex, portMAX_DELAY);
-  exitActivity();
+  const auto& item = settingsItems[selectedItemIndex];
+  const auto& setting = *(item.setting);
 
-  const SettingInfo* settingsList = nullptr;
-  int settingsCount = 0;
-
-  switch (categoryIndex) {
-    case 0:  // Display
-      settingsList = displaySettings;
-      settingsCount = displaySettingsCount;
-      break;
-    case 1:  // Reader
-      settingsList = readerSettings;
-      settingsCount = readerSettingsCount;
-      break;
-    case 2:  // Controls
-      settingsList = controlsSettings;
-      settingsCount = controlsSettingsCount;
-      break;
-    case 3:  // System
-      settingsList = systemSettings;
-      settingsCount = systemSettingsCount;
-      break;
+  if (setting.type == SettingType::TOGGLE && setting.valuePtr != nullptr) {
+    const bool currentValue = SETTINGS.*(setting.valuePtr);
+    SETTINGS.*(setting.valuePtr) = !currentValue;
+  } else if (setting.type == SettingType::ENUM && setting.valuePtr != nullptr) {
+    const uint8_t currentValue = SETTINGS.*(setting.valuePtr);
+    SETTINGS.*(setting.valuePtr) = (currentValue + 1) % static_cast<uint8_t>(setting.enumValues.size());
+  } else if (setting.type == SettingType::VALUE && setting.valuePtr != nullptr) {
+    const int8_t currentValue = SETTINGS.*(setting.valuePtr);
+    if (currentValue + setting.valueRange.step > setting.valueRange.max) {
+      SETTINGS.*(setting.valuePtr) = setting.valueRange.min;
+    } else {
+      SETTINGS.*(setting.valuePtr) = currentValue + setting.valueRange.step;
+    }
+  } else if (setting.type == SettingType::ACTION) {
+    if (strcmp(setting.name, "KOReader Sync") == 0) {
+      xSemaphoreTake(renderingMutex, portMAX_DELAY);
+      exitActivity();
+      enterNewActivity(new KOReaderSettingsActivity(renderer, mappedInput, [this] {
+        exitActivity();
+        updateRequired = true;
+      }));
+      xSemaphoreGive(renderingMutex);
+      return;
+    }
+    if (strcmp(setting.name, "OPDS Browser") == 0) {
+      xSemaphoreTake(renderingMutex, portMAX_DELAY);
+      exitActivity();
+      enterNewActivity(new CalibreSettingsActivity(renderer, mappedInput, [this] {
+        exitActivity();
+        updateRequired = true;
+      }));
+      xSemaphoreGive(renderingMutex);
+      return;
+    }
+    if (strcmp(setting.name, "Clear Cache") == 0) {
+      xSemaphoreTake(renderingMutex, portMAX_DELAY);
+      exitActivity();
+      enterNewActivity(new ClearCacheActivity(renderer, mappedInput, [this] {
+        exitActivity();
+        updateRequired = true;
+      }));
+      xSemaphoreGive(renderingMutex);
+      return;
+    }
+    if (strcmp(setting.name, "Check for updates") == 0) {
+      xSemaphoreTake(renderingMutex, portMAX_DELAY);
+      exitActivity();
+      enterNewActivity(new OtaUpdateActivity(renderer, mappedInput, [this] {
+        exitActivity();
+        updateRequired = true;
+      }));
+      xSemaphoreGive(renderingMutex);
+      return;
+    }
+    if (strcmp(setting.name, "Next Wallpaper") == 0) {
+      std::vector<std::string> files;
+      if (listCustomWallpapers(files)) {
+        size_t nextIndex = APP_STATE.lastSleepImage + 1;
+        if (nextIndex >= files.size()) {
+          nextIndex = 0;
+        }
+        APP_STATE.lastSleepImage = nextIndex;
+        APP_STATE.saveToFile();
+      }
+    }
+  } else {
+    return;
   }
 
-  enterNewActivity(new CategorySettingsActivity(renderer, mappedInput, categoryNames[categoryIndex], settingsList,
-                                                settingsCount, [this] {
-                                                  exitActivity();
-                                                  updateRequired = true;
-                                                }));
-  xSemaphoreGive(renderingMutex);
+  SETTINGS.saveToFile();
+}
+
+void SettingsActivity::buildSettingsItems() {
+  settingsItems.clear();
+  settingsItems.reserve(displaySettingsCount + readerSettingsCount + controlsSettingsCount + systemSettingsCount + 4);
+
+  settingsItems.push_back({SettingsItemType::Header, "Display", nullptr});
+  for (int i = 0; i < displaySettingsCount; i++) {
+    settingsItems.push_back({SettingsItemType::Setting, nullptr, &displaySettings[i]});
+  }
+  settingsItems.push_back({SettingsItemType::Header, "Reader", nullptr});
+  for (int i = 0; i < readerSettingsCount; i++) {
+    settingsItems.push_back({SettingsItemType::Setting, nullptr, &readerSettings[i]});
+  }
+  settingsItems.push_back({SettingsItemType::Header, "Controls", nullptr});
+  for (int i = 0; i < controlsSettingsCount; i++) {
+    settingsItems.push_back({SettingsItemType::Setting, nullptr, &controlsSettings[i]});
+  }
+  settingsItems.push_back({SettingsItemType::Header, "System", nullptr});
+  for (int i = 0; i < systemSettingsCount; i++) {
+    settingsItems.push_back({SettingsItemType::Setting, nullptr, &systemSettings[i]});
+  }
+}
+
+int SettingsActivity::getPageItems() const {
+  const int screenHeight = renderer.getScreenHeight();
+  const int bottomBarHeight = 60;
+  const int availableHeight = screenHeight - SETTINGS_TOP_Y - bottomBarHeight;
+  int items = availableHeight / LINE_HEIGHT;
+  if (items < 1) {
+    items = 1;
+  }
+  return items;
+}
+
+int SettingsActivity::getTotalPages() const {
+  const int itemCount = static_cast<int>(settingsItems.size());
+  const int pageItems = getPageItems();
+  if (itemCount == 0) return 1;
+  return (itemCount + pageItems - 1) / pageItems;
+}
+
+int SettingsActivity::getCurrentPage() const {
+  const int pageItems = getPageItems();
+  return selectedItemIndex / pageItems + 1;
+}
+
+bool SettingsActivity::isSelectableIndex(const int index) const {
+  if (index < 0 || index >= static_cast<int>(settingsItems.size())) {
+    return false;
+  }
+  return settingsItems[index].type == SettingsItemType::Setting;
+}
+
+int SettingsActivity::getFirstSelectableIndex() const {
+  for (size_t i = 0; i < settingsItems.size(); i++) {
+    if (settingsItems[i].type == SettingsItemType::Setting) {
+      return static_cast<int>(i);
+    }
+  }
+  return 0;
+}
+
+int SettingsActivity::findNextSelectableIndex(const int startIndex, const int direction) const {
+  const int itemCount = static_cast<int>(settingsItems.size());
+  if (itemCount == 0) {
+    return startIndex;
+  }
+  int index = startIndex;
+  for (int i = 0; i < itemCount; i++) {
+    index = (index + direction + itemCount) % itemCount;
+    if (isSelectableIndex(index)) {
+      return index;
+    }
+  }
+  return startIndex;
 }
 
 void SettingsActivity::displayTaskLoop() {
@@ -178,32 +312,105 @@ void SettingsActivity::displayTaskLoop() {
 }
 
 void SettingsActivity::render() const {
-  renderer.clearScreen();
+  const bool darkMode = SETTINGS.readerDarkMode;
+  renderer.clearScreen(darkMode ? 0x00 : 0xFF);
 
   const auto pageWidth = renderer.getScreenWidth();
   const auto pageHeight = renderer.getScreenHeight();
 
   // Draw header
-  renderer.drawCenteredText(UI_12_FONT_ID, 15, "Settings", true, EpdFontFamily::BOLD);
+  renderer.drawCenteredText(UI_12_FONT_ID, 15, "Settings", !darkMode, EpdFontFamily::BOLD);
 
-  // Draw selection
-  renderer.fillRect(0, 60 + selectedCategoryIndex * 30 - 2, pageWidth - 1, 30);
+  const int pageItems = getPageItems();
+  const int totalItems = static_cast<int>(settingsItems.size());
+  int pageStartIndex = (pageItems > 0) ? (selectedItemIndex / pageItems * pageItems) : 0;
 
-  // Draw all categories
-  for (int i = 0; i < categoryCount; i++) {
-    const int categoryY = 60 + i * 30;  // 30 pixels between categories
+  auto computeReservedRows = [&](int startIndex) {
+    const bool moreAbove = startIndex > 0;
+    const bool moreBelow = (startIndex + pageItems) < totalItems;
+    const int reservedTop = moreAbove ? 1 : 0;
+    const int reservedBottom = moreBelow ? 1 : 0;
+    int visibleRows = pageItems - reservedTop - reservedBottom;
+    if (visibleRows < 1) {
+      visibleRows = 1;
+    }
+    return std::make_tuple(moreAbove, moreBelow, reservedTop, reservedBottom, visibleRows);
+  };
 
-    // Draw category name
-    renderer.drawText(UI_10_FONT_ID, 20, categoryY, categoryNames[i], i != selectedCategoryIndex);
+  bool hasMoreAbove = false;
+  bool hasMoreBelow = false;
+  int reservedTop = 0;
+  int reservedBottom = 0;
+  int visibleRows = 1;
+  std::tie(hasMoreAbove, hasMoreBelow, reservedTop, reservedBottom, visibleRows) = computeReservedRows(pageStartIndex);
+
+  // Keep the selected item within the visible rows (excluding the reserved "(more)" rows)
+  if (selectedItemIndex < pageStartIndex) {
+    pageStartIndex = selectedItemIndex;
+  } else if (selectedItemIndex >= pageStartIndex + visibleRows) {
+    pageStartIndex = selectedItemIndex - visibleRows + 1;
+  }
+  if (pageStartIndex < 0) {
+    pageStartIndex = 0;
+  } else if (pageStartIndex > totalItems - 1) {
+    pageStartIndex = std::max(0, totalItems - 1);
   }
 
-  // Draw version text above button hints
-  renderer.drawText(SMALL_FONT_ID, pageWidth - 20 - renderer.getTextWidth(SMALL_FONT_ID, CROSSPOINT_VERSION),
-                    pageHeight - 60, CROSSPOINT_VERSION);
+  std::tie(hasMoreAbove, hasMoreBelow, reservedTop, reservedBottom, visibleRows) = computeReservedRows(pageStartIndex);
+
+  if (isSelectableIndex(selectedItemIndex)) {
+    renderer.fillRect(0,
+                      SETTINGS_TOP_Y + (selectedItemIndex - pageStartIndex + reservedTop) * LINE_HEIGHT - 2,
+                      pageWidth - 1, LINE_HEIGHT, !darkMode);
+  }
+
+  const int renderEndIndex = std::min(totalItems, pageStartIndex + visibleRows);
+  for (int i = pageStartIndex; i < renderEndIndex; i++) {
+    const int itemY = SETTINGS_TOP_Y + (i - pageStartIndex + reservedTop) * LINE_HEIGHT;
+    const auto& item = settingsItems[i];
+
+    if (item.type == SettingsItemType::Header) {
+      renderer.drawText(UI_10_FONT_ID, 20, itemY, item.header, !darkMode, EpdFontFamily::BOLD);
+      const int textWidth = renderer.getTextWidth(UI_10_FONT_ID, item.header, EpdFontFamily::BOLD);
+      const int lineStart = 20 + textWidth + 10;
+      if (lineStart < pageWidth - 20) {
+        renderer.drawLine(lineStart, itemY + 8, pageWidth - 20, itemY + 8, !darkMode);
+      }
+      continue;
+    }
+
+    const bool isSelected = (i == selectedItemIndex);
+    const bool textColor = darkMode ? isSelected : !isSelected;
+    renderer.drawText(UI_10_FONT_ID, 20, itemY, item.setting->name, textColor);
+
+    std::string valueText;
+    if (item.setting->type == SettingType::TOGGLE && item.setting->valuePtr != nullptr) {
+      const bool value = SETTINGS.*(item.setting->valuePtr);
+      valueText = value ? "ON" : "OFF";
+    } else if (item.setting->type == SettingType::ENUM && item.setting->valuePtr != nullptr) {
+      const uint8_t value = SETTINGS.*(item.setting->valuePtr);
+      valueText = item.setting->enumValues[value];
+    } else if (item.setting->type == SettingType::VALUE && item.setting->valuePtr != nullptr) {
+      valueText = std::to_string(SETTINGS.*(item.setting->valuePtr));
+    }
+    if (!valueText.empty()) {
+      const auto width = renderer.getTextWidth(UI_10_FONT_ID, valueText.c_str());
+      renderer.drawText(UI_10_FONT_ID, pageWidth - 20 - width, itemY, valueText.c_str(), textColor);
+    }
+  }
+
+  // Draw "(more)" indicators as reserved rows at first/last position of the page
+  if (hasMoreAbove) {
+    renderer.drawText(UI_10_FONT_ID, 20, SETTINGS_TOP_Y, "(more)", !darkMode);
+  }
+  if (hasMoreBelow) {
+    const int lastRowY = SETTINGS_TOP_Y + (pageItems - 1) * LINE_HEIGHT;
+    renderer.drawText(UI_10_FONT_ID, 20, lastRowY, "(more)", !darkMode);
+  }
 
   // Draw help text
-  const auto labels = mappedInput.mapLabels("« Back", "Select", "", "");
-  renderer.drawButtonHints(UI_10_FONT_ID, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+  const auto labels = mappedInput.mapLabels("« Back", "Toggle", "Up", "Down");
+  renderer.drawButtonHints(UI_10_FONT_ID, labels.btn1, labels.btn2, labels.btn3, labels.btn4, !darkMode);
 
   // Always use standard refresh for settings screen
   renderer.displayBuffer();

@@ -26,7 +26,7 @@ class ScreenComponents {
   // Draw a scroll/page indicator on the right side of the screen
   // Shows up/down arrows and current page fraction (e.g., "1/3")
   static void drawScrollIndicator(const GfxRenderer& renderer, int currentPage, int totalPages, int contentTop,
-                                  int contentHeight);
+                                  int contentHeight, bool black = true);
 
   /**
    * Draw a progress bar with percentage text.

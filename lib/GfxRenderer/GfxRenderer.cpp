@@ -481,7 +481,7 @@ int GfxRenderer::getLineHeight(const int fontId) const {
 }
 
 void GfxRenderer::drawButtonHints(const int fontId, const char* btn1, const char* btn2, const char* btn3,
-                                  const char* btn4) {
+                                  const char* btn4, const bool black) {
   const Orientation orig_orientation = getOrientation();
   setOrientation(Orientation::Portrait);
 
@@ -497,18 +497,19 @@ void GfxRenderer::drawButtonHints(const int fontId, const char* btn1, const char
     // Only draw if the label is non-empty
     if (labels[i] != nullptr && labels[i][0] != '\0') {
       const int x = buttonPositions[i];
-      fillRect(x, pageHeight - buttonY, buttonWidth, buttonHeight, false);
-      drawRect(x, pageHeight - buttonY, buttonWidth, buttonHeight);
+      fillRect(x, pageHeight - buttonY, buttonWidth, buttonHeight, !black);
+      drawRect(x, pageHeight - buttonY, buttonWidth, buttonHeight, black);
       const int textWidth = getTextWidth(fontId, labels[i]);
       const int textX = x + (buttonWidth - 1 - textWidth) / 2;
-      drawText(fontId, textX, pageHeight - buttonY + textYOffset, labels[i]);
+      drawText(fontId, textX, pageHeight - buttonY + textYOffset, labels[i], black);
     }
   }
 
   setOrientation(orig_orientation);
 }
 
-void GfxRenderer::drawSideButtonHints(const int fontId, const char* topBtn, const char* bottomBtn) const {
+void GfxRenderer::drawSideButtonHints(const int fontId, const char* topBtn, const char* bottomBtn,
+                                       const bool black) const {
   const int screenWidth = getScreenWidth();
   constexpr int buttonWidth = 40;   // Width on screen (height when rotated)
   constexpr int buttonHeight = 80;  // Height on screen (width when rotated)
@@ -523,22 +524,22 @@ void GfxRenderer::drawSideButtonHints(const int fontId, const char* topBtn, cons
 
   // Draw top button outline (3 sides, bottom open)
   if (topBtn != nullptr && topBtn[0] != '\0') {
-    drawLine(x, topButtonY, x + buttonWidth - 1, topButtonY);                                       // Top
-    drawLine(x, topButtonY, x, topButtonY + buttonHeight - 1);                                      // Left
-    drawLine(x + buttonWidth - 1, topButtonY, x + buttonWidth - 1, topButtonY + buttonHeight - 1);  // Right
+    drawLine(x, topButtonY, x + buttonWidth - 1, topButtonY, black);                                       // Top
+    drawLine(x, topButtonY, x, topButtonY + buttonHeight - 1, black);                                      // Left
+    drawLine(x + buttonWidth - 1, topButtonY, x + buttonWidth - 1, topButtonY + buttonHeight - 1, black);  // Right
   }
 
   // Draw shared middle border
   if ((topBtn != nullptr && topBtn[0] != '\0') || (bottomBtn != nullptr && bottomBtn[0] != '\0')) {
-    drawLine(x, topButtonY + buttonHeight, x + buttonWidth - 1, topButtonY + buttonHeight);  // Shared border
+    drawLine(x, topButtonY + buttonHeight, x + buttonWidth - 1, topButtonY + buttonHeight, black);  // Shared border
   }
 
   // Draw bottom button outline (3 sides, top is shared)
   if (bottomBtn != nullptr && bottomBtn[0] != '\0') {
-    drawLine(x, topButtonY + buttonHeight, x, topButtonY + 2 * buttonHeight - 1);  // Left
+    drawLine(x, topButtonY + buttonHeight, x, topButtonY + 2 * buttonHeight - 1, black);  // Left
     drawLine(x + buttonWidth - 1, topButtonY + buttonHeight, x + buttonWidth - 1,
-             topButtonY + 2 * buttonHeight - 1);                                                             // Right
-    drawLine(x, topButtonY + 2 * buttonHeight - 1, x + buttonWidth - 1, topButtonY + 2 * buttonHeight - 1);  // Bottom
+             topButtonY + 2 * buttonHeight - 1, black);                                                             // Right
+    drawLine(x, topButtonY + 2 * buttonHeight - 1, x + buttonWidth - 1, topButtonY + 2 * buttonHeight - 1, black);  // Bottom
   }
 
   // Draw text for each button
@@ -554,7 +555,7 @@ void GfxRenderer::drawSideButtonHints(const int fontId, const char* topBtn, cons
       const int textX = x + (buttonWidth - textHeight) / 2;
       const int textY = y + (buttonHeight + textWidth) / 2;
 
-      drawTextRotated90CW(fontId, textX, textY, labels[i]);
+      drawTextRotated90CW(fontId, textX, textY, labels[i], black);
     }
   }
 }
