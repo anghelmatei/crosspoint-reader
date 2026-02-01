@@ -26,35 +26,12 @@
 #include "activities/util/FullScreenMessageActivity.h"
 #include "fontIds.h"
 #include "images/CrossLarge.h"
-#include "util/WallpaperUtils.h"
 
 HalDisplay display;
 HalGPIO gpio;
 MappedInputManager mappedInputManager(gpio);
 GfxRenderer renderer(display);
 Activity* currentActivity;
-
-// Double-tap detection state
-unsigned long firstTapTime = 0;
-bool waitingForSecondTap = false;  // True after first tap, waiting for potential second
-bool doubleTapFiredThisFrame = false;  // True if double-tap action fired this frame
-bool singleTapPendingThisFrame = false;  // True if deferred single-tap should fire this frame
-unsigned long doubleTapSuppressUntil = 0;  // Time until which to suppress single-tap actions after double-tap
-constexpr unsigned long DOUBLE_TAP_WINDOW_MS = 300;  // Max time between taps (reduced for faster response)
-constexpr unsigned long DOUBLE_TAP_SUPPRESS_MS = 500;  // Suppress single-tap for this long after double-tap
-
-// Call this from activities to check if power button release should be ignored
-// Returns true if the tap was consumed by double-tap logic (double-tap fired recently, or first tap is deferred)
-bool isPowerButtonConsumedByDoubleTap() {
-  const unsigned long now = millis();
-  // Consumed if: double-tap fired recently, OR we're waiting for second tap (first tap is deferred)
-  return (now < doubleTapSuppressUntil) || waitingForSecondTap;
-}
-
-// Call this to check if a deferred single-tap should now be processed
-bool shouldProcessDeferredSingleTap() {
-  return singleTapPendingThisFrame;
-}
 
 // Fonts
 EpdFont bookerly14RegularFont(&bookerly_14_regular);
@@ -162,14 +139,6 @@ void enterNewActivity(Activity* activity) {
   currentActivity->onEnter();
 }
 
-void waitForPowerRelease() {
-  gpio.update();
-  while (gpio.isPressed(HalGPIO::BTN_POWER)) {
-    delay(50);
-    gpio.update();
-  }
-}
-
 // Verify power button press duration on wake-up from deep sleep
 // Pre-condition: isWakeupByPowerButton() == true
 void verifyPowerButtonDuration() {
@@ -193,7 +162,6 @@ void verifyPowerButtonDuration() {
   while (gpio.isPressed(HalGPIO::BTN_POWER) && gpio.getHeldTime() < requiredDuration) {
     delay(10);
     gpio.update();
-    yield();  // Allow other tasks to run (display refresh, etc.)
   }
 
   if (!gpio.isPressed(HalGPIO::BTN_POWER) || gpio.getHeldTime() < requiredDuration) {
@@ -202,16 +170,18 @@ void verifyPowerButtonDuration() {
     if (!gpio.isUsbConnected()) {
       gpio.startDeepSleep();
     }
-    return;
   }
+}
 
-  // Button was held long enough - wait for it to be released before continuing
-  // This prevents the main activity from processing the held button as input
-  waitForPowerRelease();
+void waitForPowerRelease() {
+  gpio.update();
+  while (gpio.isPressed(HalGPIO::BTN_POWER)) {
+    delay(50);
+    gpio.update();
+  }
 }
 
 // Enter deep sleep mode
-
 void enterDeepSleep() {
   exitActivity();
   enterNewActivity(new SleepActivity(renderer, mappedInputManager));
@@ -289,7 +259,38 @@ void setup() {
 
   gpio.begin();
 
-  // Initialize display
+  // Initialize display early so we can provide immediate visual feedback
+  // while verifying the power button hold duration. Use a fast refresh
+  // to avoid the long HALF_REFRESH delay.
+  display.begin();
+  renderer.insertFont(UI_10_FONT_ID, ui10FontFamily);
+  renderer.insertFont(UI_12_FONT_ID, ui12FontFamily);
+  renderer.insertFont(SMALL_FONT_ID, smallFontFamily);
+
+  if (gpio.isWakeupByPowerButton() && !gpio.isUsbConnected()) {
+    // Show a minimal "Opening..." indicator using FAST_REFRESH so user
+    // gets immediate feedback while we verify the hold duration.
+    const auto pageHeight = renderer.getScreenHeight();
+    renderer.clearScreen();
+    renderer.drawCenteredText(UI_12_FONT_ID, pageHeight / 2 - 10, "Opening...", true,
+                              EpdFontFamily::BOLD);
+    renderer.displayBuffer(HalDisplay::FAST_REFRESH);
+
+    Serial.printf("[%lu] [   ] Verifying power button press duration\n", millis());
+    verifyPowerButtonDuration();
+  }
+
+  // Only start serial if USB connected - reduced wait time
+  if (gpio.isUsbConnected()) {
+    Serial.begin(115200);
+    // Wait up to 500ms for Serial to be ready
+    unsigned long start = millis();
+    while (!Serial && (millis() - start) < 500) {
+      delay(10);
+    }
+  }
+
+  // Initialize display early to show boot screen ASAP
   display.begin();
   renderer.insertFont(UI_10_FONT_ID, ui10FontFamily);
   renderer.insertFont(UI_12_FONT_ID, ui12FontFamily);
@@ -314,34 +315,7 @@ void setup() {
   SETTINGS.loadFromFile();
   APP_STATE.loadFromFile();
 
-  if (gpio.isWakeupByPowerButton() && !gpio.isUsbConnected()) {
-    // Show "Opening..." popup IMMEDIATELY so user sees feedback while holding button
-    // The wallpaper should still be on screen from sleep state
-    renderBootPopupOnly(renderer);
-
-    // Now verify power button duration (user sees popup while holding)
-    Serial.printf("[%lu] [   ] Verifying power button press duration\n", millis());
-    verifyPowerButtonDuration();
-  } else {
-    // Cold boot or other wake - force full wallpaper load
-    renderBootWallpaper(renderer);
-  }
-
-  // Only start serial if USB connected - reduced wait time
-  if (gpio.isUsbConnected()) {
-    Serial.begin(115200);
-    // Wait up to 500ms for Serial to be ready
-    unsigned long start = millis();
-    while (!Serial && (millis() - start) < 500) {
-      delay(10);
-    }
-  }
-
   // Now show boot screen with user's wallpaper + "Opening..." popup
-  // (Redundant call if we just woke up from power button, but safe and ensures state if woke from other sources)
-  // Or we can check if currentActivity is NOT set?
-  // Actually, BootActivity does nothing but show the screen.
-  // We can just enter it.
   enterNewActivity(new BootActivity(renderer, mappedInputManager));
 
   // Load remaining stores
@@ -369,9 +343,8 @@ void setup() {
     onGoToReader(path, MyLibraryActivity::Tab::Recent);
   }
 
-  // Note: We don't wait for power button release here anymore
-  // The BootActivity has already shown the popup, and the main activity
-  // will handle any lingering power button input appropriately
+  // Ensure we're not still holding the power button before leaving setup
+  waitForPowerRelease();
 }
 
 void loop() {
@@ -399,43 +372,6 @@ void loop() {
     enterDeepSleep();
     // This should never be hit as `enterDeepSleep` calls esp_deep_sleep_start
     return;
-  }
-
-  // Double-tap power button detection
-  // Tracks press events: first press starts timer, second press within window = double-tap
-  doubleTapFiredThisFrame = false;
-  singleTapPendingThisFrame = false;
-  
-  if (SETTINGS.doubleTapPwrBtn != CrossPointSettings::DT_IGNORE) {
-    const unsigned long now = millis();
-    
-    if (gpio.wasPressed(HalGPIO::BTN_POWER)) {
-      if (waitingForSecondTap && (now - firstTapTime) < DOUBLE_TAP_WINDOW_MS) {
-        // Second press arrived within window - double-tap detected!
-        doubleTapFiredThisFrame = true;
-        doubleTapSuppressUntil = now + DOUBLE_TAP_SUPPRESS_MS;  // Suppress single-tap for next 500ms
-        waitingForSecondTap = false;
-        firstTapTime = 0;
-        
-        if (SETTINGS.doubleTapPwrBtn == CrossPointSettings::DT_TOGGLE_DARK_MODE) {
-          SETTINGS.readerDarkMode = !SETTINGS.readerDarkMode;
-          SETTINGS.saveToFile();
-          if (currentActivity) {
-            currentActivity->requestScreenRefresh();
-          }
-        }
-      } else {
-        // First press - start waiting for possible second tap
-        waitingForSecondTap = true;
-        firstTapTime = now;
-      }
-    } else if (waitingForSecondTap && (now - firstTapTime) >= DOUBLE_TAP_WINDOW_MS && !gpio.isPressed(HalGPIO::BTN_POWER)) {
-      // Timeout expired and button was released within window - fire deferred single-tap action
-      // Note: If button is still held, this is likely a shutdown hold, not a tap
-      singleTapPendingThisFrame = true;
-      waitingForSecondTap = false;
-      firstTapTime = 0;
-    }
   }
 
   if (gpio.isPressed(HalGPIO::BTN_POWER) && gpio.getHeldTime() > SETTINGS.getPowerButtonDuration()) {

@@ -19,7 +19,7 @@ class SettingsActivity final : public ActivityWithSubactivity {
   int selectedItemIndex = 0;
   const std::function<void()> onGoHome;
 
-  enum class SettingsItemType { Header, Setting, Separator };
+  enum class SettingsItemType { Header, Setting };
   struct SettingsItem {
     SettingsItemType type;
     const char* header;
@@ -46,5 +46,4 @@ class SettingsActivity final : public ActivityWithSubactivity {
   void onEnter() override;
   void onExit() override;
   void loop() override;
-  void requestScreenRefresh() override { updateRequired = true; }
 };

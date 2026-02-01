@@ -492,7 +492,7 @@ void HomeActivity::render() {
     const bool selected = selectorIndex == static_cast<int>(i);
 
     if (selected) {
-      renderer.fillRect(tileX, tileY, menuTileWidth, menuTileHeight, darkMode);
+      renderer.fillRect(tileX, tileY, menuTileWidth, menuTileHeight, !darkMode);
     } else {
       renderer.drawRect(tileX, tileY, menuTileWidth, menuTileHeight, !darkMode);
     }
@@ -503,7 +503,7 @@ void HomeActivity::render() {
     const int lineHeight = renderer.getLineHeight(UI_10_FONT_ID);
     const int textY = tileY + (menuTileHeight - lineHeight) / 2;
 
-    const bool textColor = !darkMode;
+    const bool textColor = selected ? darkMode : !darkMode;
     renderer.drawText(UI_10_FONT_ID, textX, textY, label.c_str(), textColor);
   }
 
