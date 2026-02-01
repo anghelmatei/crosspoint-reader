@@ -14,4 +14,16 @@ class ActivityWithSubactivity : public Activity {
       : Activity(std::move(name), renderer, mappedInput) {}
   void loop() override;
   void onExit() override;
+  void requestScreenRefresh() override {
+    if (subActivity) {
+      subActivity->requestScreenRefresh();
+    }
+  }
+  void requestCleanScreenRefresh() override {
+    if (subActivity) {
+      subActivity->requestCleanScreenRefresh();
+    } else {
+      requestScreenRefresh();
+    }
+  }
 };

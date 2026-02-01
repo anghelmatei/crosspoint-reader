@@ -23,10 +23,6 @@ constexpr unsigned long skipPageMs = 700;
 constexpr unsigned long goHomeMs = 1000;
 }  // namespace
 
-// Defined in main.cpp - check if power button release was consumed by double-tap detection
-extern bool isPowerButtonConsumedByDoubleTap();
-extern bool shouldProcessDeferredSingleTap();
-
 void XtcReaderActivity::taskTrampoline(void* param) {
   auto* self = static_cast<XtcReaderActivity*>(param);
   self->displayTaskLoop();
@@ -115,9 +111,7 @@ void XtcReaderActivity::loop() {
     return;
   }
 
-  // Power button: check for immediate release (when double-tap disabled) OR deferred single-tap (after timeout)
-  const bool powerReleased = (mappedInput.wasReleased(MappedInputManager::Button::Power) && !isPowerButtonConsumedByDoubleTap()) 
-                             || shouldProcessDeferredSingleTap();
+  const bool powerTap = mappedInput.consumePowerSingleTap();
 
   // When long-press chapter skip is disabled, turn pages on press instead of release.
   const bool usePressForPageTurn = !SETTINGS.longPressChapterSkip;
@@ -125,7 +119,7 @@ void XtcReaderActivity::loop() {
                                                     mappedInput.wasPressed(MappedInputManager::Button::Left))
                                                  : (mappedInput.wasReleased(MappedInputManager::Button::PageBack) ||
                                                     mappedInput.wasReleased(MappedInputManager::Button::Left));
-  const bool powerPageTurn = SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::PAGE_TURN && powerReleased;
+  const bool powerPageTurn = SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::PAGE_TURN && powerTap;
   const bool nextTriggered = usePressForPageTurn
                                  ? (mappedInput.wasPressed(MappedInputManager::Button::PageForward) || powerPageTurn ||
                                     mappedInput.wasPressed(MappedInputManager::Button::Right))

@@ -4,6 +4,7 @@
 #include <GfxRenderer.h>
 #include <SDCardManager.h>
 
+#include "CrossPointSettings.h"
 #include "CrossPointState.h"
 #include "fontIds.h"
 #include "images/CrossLarge.h"
@@ -24,11 +25,12 @@ void BootActivity::renderPopup(const char* message) const {
   constexpr int y = 117;
   const int w = textWidth + margin * 2;
   const int h = renderer.getLineHeight(UI_12_FONT_ID) + margin * 2;
+  const bool darkMode = SETTINGS.readerDarkMode;
 
   // Draw popup box with border
-  renderer.fillRect(x - 5, y - 5, w + 10, h + 10, true);
-  renderer.fillRect(x + 5, y + 5, w - 10, h - 10, false);
-  renderer.drawText(UI_12_FONT_ID, x + margin, y + margin, message, true, EpdFontFamily::BOLD);
+  renderer.fillRect(x - 5, y - 5, w + 10, h + 10, !darkMode);
+  renderer.fillRect(x + 5, y + 5, w - 10, h - 10, darkMode);
+  renderer.drawText(UI_12_FONT_ID, x + margin, y + margin, message, !darkMode, EpdFontFamily::BOLD);
   renderer.displayBuffer(HalDisplay::HALF_REFRESH);
 }
 
@@ -62,7 +64,8 @@ void BootActivity::renderCustomWallpaper() const {
         y = (pageHeight - bitmap.getHeight()) / 2;
       }
 
-      renderer.clearScreen();
+      const bool darkMode = SETTINGS.readerDarkMode;
+      renderer.clearScreen(darkMode ? 0x00 : 0xFF);
       renderer.drawBitmap(bitmap, x, y, pageWidth, pageHeight);
       file.close();
 
@@ -98,7 +101,8 @@ void BootActivity::renderCustomWallpaper() const {
         y = (pageHeight - bitmap.getHeight()) / 2;
       }
 
-      renderer.clearScreen();
+      const bool darkMode = SETTINGS.readerDarkMode;
+      renderer.clearScreen(darkMode ? 0x00 : 0xFF);
       renderer.drawBitmap(bitmap, x, y, pageWidth, pageHeight);
       file.close();
 
@@ -115,10 +119,11 @@ void BootActivity::renderCustomWallpaper() const {
 void BootActivity::renderDefaultBootScreen() const {
   const auto pageWidth = renderer.getScreenWidth();
   const auto pageHeight = renderer.getScreenHeight();
+  const bool darkMode = SETTINGS.readerDarkMode;
 
-  renderer.clearScreen();
+  renderer.clearScreen(darkMode ? 0x00 : 0xFF);
   renderer.drawImage(CrossLarge, (pageWidth - 128) / 2, (pageHeight - 128) / 2, 128, 128);
-  renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 + 70, "CrossPoint", true, EpdFontFamily::BOLD);
-  renderer.drawCenteredText(SMALL_FONT_ID, pageHeight / 2 + 95, "Opening...");
+  renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 + 70, "CrossPoint", !darkMode, EpdFontFamily::BOLD);
+  renderer.drawCenteredText(SMALL_FONT_ID, pageHeight / 2 + 95, "Opening...", !darkMode);
   renderer.displayBuffer(HalDisplay::HALF_REFRESH);
 }

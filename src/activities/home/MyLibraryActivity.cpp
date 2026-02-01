@@ -378,11 +378,8 @@ void MyLibraryActivity::renderCombinedList() const {
 
     if (item.type == LibraryItemType::Header) {
       renderer.drawText(UI_10_FONT_ID, LEFT_MARGIN, y, item.label, !darkMode, EpdFontFamily::BOLD);
-      const int textWidth = renderer.getTextWidth(UI_10_FONT_ID, item.label, EpdFontFamily::BOLD);
-      const int lineStart = LEFT_MARGIN + textWidth + 10;
-      if (lineStart < pageWidth - RIGHT_MARGIN) {
-        renderer.drawLine(lineStart, y + 8, pageWidth - RIGHT_MARGIN, y + 8, !darkMode);
-      }
+      const int underlineY = y + renderer.getLineHeight(UI_10_FONT_ID) + 3;
+      renderer.drawLine(LEFT_MARGIN, underlineY, pageWidth - RIGHT_MARGIN, underlineY, !darkMode);
       continue;
     }
 

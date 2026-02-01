@@ -18,6 +18,7 @@ class HomeActivity final : public Activity {
   bool coverRendered = false;      // Track if cover has been rendered once
   bool coverBufferStored = false;  // Track if cover buffer is stored
   uint8_t* coverBuffer = nullptr;  // HomeActivity's own buffer for cover image
+  bool cleanRefreshNext = false;
   std::string lastBookTitle;
   std::string lastBookAuthor;
   std::string coverBmpPath;
@@ -50,4 +51,14 @@ class HomeActivity final : public Activity {
   void onEnter() override;
   void onExit() override;
   void loop() override;
+    void requestScreenRefresh() override {
+      // Force a re-render and drop any cached cover buffer that may not match the new theme.
+      coverRendered = false;
+      freeCoverBuffer();
+      updateRequired = true;
+    }
+    void requestCleanScreenRefresh() override {
+      requestScreenRefresh();
+      cleanRefreshNext = true;
+    }
 };

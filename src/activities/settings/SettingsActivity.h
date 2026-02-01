@@ -16,6 +16,7 @@ class SettingsActivity final : public ActivityWithSubactivity {
   TaskHandle_t displayTaskHandle = nullptr;
   SemaphoreHandle_t renderingMutex = nullptr;
   bool updateRequired = false;
+  mutable bool cleanRefreshNext = false;
   int selectedItemIndex = 0;
   const std::function<void()> onGoHome;
 
@@ -46,4 +47,17 @@ class SettingsActivity final : public ActivityWithSubactivity {
   void onEnter() override;
   void onExit() override;
   void loop() override;
+  void requestScreenRefresh() override {
+    if (subActivity) {
+      subActivity->requestScreenRefresh();
+    }
+    updateRequired = true;
+  }
+  void requestCleanScreenRefresh() override {
+    if (subActivity) {
+      subActivity->requestCleanScreenRefresh();
+    }
+    cleanRefreshNext = true;
+    updateRequired = true;
+  }
 };

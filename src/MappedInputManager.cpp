@@ -1,5 +1,7 @@
 #include "MappedInputManager.h"
 
+#include <Arduino.h>
+
 #include "CrossPointSettings.h"
 
 namespace {
@@ -73,6 +75,66 @@ bool MappedInputManager::wasAnyPressed() const { return gpio.wasAnyPressed(); }
 bool MappedInputManager::wasAnyReleased() const { return gpio.wasAnyReleased(); }
 
 unsigned long MappedInputManager::getHeldTime() const { return gpio.getHeldTime(); }
+
+void MappedInputManager::updateGestures() {
+  constexpr unsigned long kDoubleTapWindowMs = 400;
+
+  const unsigned long now = millis();
+
+  const bool doubleTapEnabled =
+      SETTINGS.doubleTapPwrBtn == CrossPointSettings::DOUBLE_TAP_PWRBTN::DT_TOGGLE_DARK_MODE;
+
+  if (!doubleTapEnabled) {
+    // No double-tap feature: emit single tap immediately on release.
+    powerWaitingForSecondTap = false;
+    powerFirstTapMs = 0;
+    if (wasReleased(Button::Power)) {
+      powerSingleTapQueued = true;
+    }
+    return;
+  }
+
+  // Double-tap enabled: first release starts a window; second release within window emits double tap.
+  if (wasReleased(Button::Power)) {
+    if (powerWaitingForSecondTap && (now - powerFirstTapMs) <= kDoubleTapWindowMs) {
+      powerDoubleTapQueued = true;
+      powerWaitingForSecondTap = false;
+      powerFirstTapMs = 0;
+      powerSingleTapQueued = false;
+      return;
+    }
+
+    powerWaitingForSecondTap = true;
+    powerFirstTapMs = now;
+    return;
+  }
+
+  // If the window expired without a second tap, emit a single tap.
+  if (powerWaitingForSecondTap && (now - powerFirstTapMs) > kDoubleTapWindowMs) {
+    powerSingleTapQueued = true;
+    powerWaitingForSecondTap = false;
+    powerFirstTapMs = 0;
+  }
+}
+
+bool MappedInputManager::consumePowerSingleTap() {
+  const bool value = powerSingleTapQueued;
+  powerSingleTapQueued = false;
+  return value;
+}
+
+bool MappedInputManager::consumePowerDoubleTap() {
+  const bool value = powerDoubleTapQueued;
+  powerDoubleTapQueued = false;
+  return value;
+}
+
+void MappedInputManager::resetPowerGestures() {
+  powerFirstTapMs = 0;
+  powerWaitingForSecondTap = false;
+  powerSingleTapQueued = false;
+  powerDoubleTapQueued = false;
+}
 
 MappedInputManager::Labels MappedInputManager::mapLabels(const char* back, const char* confirm, const char* previous,
                                                          const char* next) const {

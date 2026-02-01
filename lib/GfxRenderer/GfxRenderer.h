@@ -72,6 +72,8 @@ class GfxRenderer {
   void drawBitmap(const Bitmap& bitmap, int x, int y, int maxWidth, int maxHeight, float cropX = 0,
                   float cropY = 0) const;
   void drawBitmap1Bit(const Bitmap& bitmap, int x, int y, int maxWidth, int maxHeight) const;
+  void drawBitmap1BitInverted(const Bitmap& bitmap, int x, int y, int maxWidth, int maxHeight) const;
+  void drawBitmapInverted(const Bitmap& bitmap, int x, int y, int maxWidth, int maxHeight) const;
   void fillPolygon(const int* xPoints, const int* yPoints, int numPoints, bool state = true) const;
 
   // Text
@@ -87,8 +89,7 @@ class GfxRenderer {
                             EpdFontFamily::Style style = EpdFontFamily::REGULAR) const;
 
   // UI Components
-  void drawButtonHints(int fontId, const char* btn1, const char* btn2, const char* btn3, const char* btn4,
-                       bool black = true);
+  void drawButtonHints(int fontId, const char* btn1, const char* btn2, const char* btn3, const char* btn4, bool black = true);
   void drawSideButtonHints(int fontId, const char* topBtn, const char* bottomBtn, bool black = true) const;
 
  private:

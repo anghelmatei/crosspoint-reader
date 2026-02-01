@@ -39,10 +39,11 @@ void SleepActivity::renderPopup(const char* message) const {
   constexpr int y = 117;
   const int w = textWidth + margin * 2;
   const int h = renderer.getLineHeight(UI_12_FONT_ID) + margin * 2;
+  const bool darkMode = SETTINGS.readerDarkMode;
   // renderer.clearScreen();
-  renderer.fillRect(x - 5, y - 5, w + 10, h + 10, true);
-  renderer.fillRect(x + 5, y + 5, w - 10, h - 10, false);
-  renderer.drawText(UI_12_FONT_ID, x + margin, y + margin, message, true, EpdFontFamily::BOLD);
+  renderer.fillRect(x - 5, y - 5, w + 10, h + 10, !darkMode);
+  renderer.fillRect(x + 5, y + 5, w - 10, h - 10, darkMode);
+  renderer.drawText(UI_12_FONT_ID, x + margin, y + margin, message, !darkMode, EpdFontFamily::BOLD);
   renderer.displayBuffer();
 }
 

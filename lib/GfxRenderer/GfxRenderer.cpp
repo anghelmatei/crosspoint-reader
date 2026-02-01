@@ -330,6 +330,138 @@ void GfxRenderer::drawBitmap1Bit(const Bitmap& bitmap, const int x, const int y,
   free(rowBytes);
 }
 
+void GfxRenderer::drawBitmap1BitInverted(const Bitmap& bitmap, const int x, const int y, const int maxWidth,
+                                         const int maxHeight) const {
+  float scale = 1.0f;
+  bool isScaled = false;
+  if (maxWidth > 0 && bitmap.getWidth() > maxWidth) {
+    scale = static_cast<float>(maxWidth) / static_cast<float>(bitmap.getWidth());
+    isScaled = true;
+  }
+  if (maxHeight > 0 && bitmap.getHeight() > maxHeight) {
+    scale = std::min(scale, static_cast<float>(maxHeight) / static_cast<float>(bitmap.getHeight()));
+    isScaled = true;
+  }
+
+  const int outputRowSize = (bitmap.getWidth() + 3) / 4;
+  auto* outputRow = static_cast<uint8_t*>(malloc(outputRowSize));
+  auto* rowBytes = static_cast<uint8_t*>(malloc(bitmap.getRowBytes()));
+
+  if (!outputRow || !rowBytes) {
+    Serial.printf("[%lu] [GFX] !! Failed to allocate 1-bit BMP row buffers (inverted)\n", millis());
+    free(outputRow);
+    free(rowBytes);
+    return;
+  }
+
+  for (int bmpY = 0; bmpY < bitmap.getHeight(); bmpY++) {
+    if (bitmap.readNextRow(outputRow, rowBytes) != BmpReaderError::Ok) {
+      Serial.printf("[%lu] [GFX] Failed to read row %d from 1-bit bitmap (inverted)\n", millis(), bmpY);
+      free(outputRow);
+      free(rowBytes);
+      return;
+    }
+
+    const int bmpYOffset = bitmap.isTopDown() ? bmpY : bitmap.getHeight() - 1 - bmpY;
+    int screenY = y + (isScaled ? static_cast<int>(std::floor(bmpYOffset * scale)) : bmpYOffset);
+    if (screenY >= getScreenHeight()) {
+      continue;
+    }
+    if (screenY < 0) {
+      continue;
+    }
+
+    for (int bmpX = 0; bmpX < bitmap.getWidth(); bmpX++) {
+      int screenX = x + (isScaled ? static_cast<int>(std::floor(bmpX * scale)) : bmpX);
+      if (screenX >= getScreenWidth()) {
+        break;
+      }
+      if (screenX < 0) {
+        continue;
+      }
+
+      const uint8_t val = outputRow[bmpX / 4] >> (6 - ((bmpX * 2) % 8)) & 0x3;
+
+      // Invert 1-bit source: draw white where the source would have been black.
+      if (val < 3) {
+        drawPixel(screenX, screenY, false);
+      }
+    }
+  }
+
+  free(outputRow);
+  free(rowBytes);
+}
+
+void GfxRenderer::drawBitmapInverted(const Bitmap& bitmap, const int x, const int y, const int maxWidth,
+                                     const int maxHeight) const {
+  // Fast path for 1-bit sources (no crop support needed for current use).
+  if (bitmap.is1Bit()) {
+    drawBitmap1BitInverted(bitmap, x, y, maxWidth, maxHeight);
+    return;
+  }
+
+  float scale = 1.0f;
+  bool isScaled = false;
+  if (maxWidth > 0 && bitmap.getWidth() > maxWidth) {
+    scale = static_cast<float>(maxWidth) / static_cast<float>(bitmap.getWidth());
+    isScaled = true;
+  }
+  if (maxHeight > 0 && bitmap.getHeight() > maxHeight) {
+    scale = std::min(scale, static_cast<float>(maxHeight) / static_cast<float>(bitmap.getHeight()));
+    isScaled = true;
+  }
+
+  const int outputRowSize = (bitmap.getWidth() + 3) / 4;
+  auto* outputRow = static_cast<uint8_t*>(malloc(outputRowSize));
+  auto* rowBytes = static_cast<uint8_t*>(malloc(bitmap.getRowBytes()));
+
+  if (!outputRow || !rowBytes) {
+    Serial.printf("[%lu] [GFX] !! Failed to allocate BMP row buffers (inverted)\n", millis());
+    free(outputRow);
+    free(rowBytes);
+    return;
+  }
+
+  for (int bmpY = 0; bmpY < bitmap.getHeight(); bmpY++) {
+    if (bitmap.readNextRow(outputRow, rowBytes) != BmpReaderError::Ok) {
+      Serial.printf("[%lu] [GFX] Failed to read row %d from bitmap (inverted)\n", millis(), bmpY);
+      free(outputRow);
+      free(rowBytes);
+      return;
+    }
+
+    const int bmpYOffset = bitmap.isTopDown() ? bmpY : bitmap.getHeight() - 1 - bmpY;
+    int screenY = y + (isScaled ? static_cast<int>(std::floor(bmpYOffset * scale)) : bmpYOffset);
+    if (screenY >= getScreenHeight()) {
+      continue;
+    }
+    if (screenY < 0) {
+      continue;
+    }
+
+    for (int bmpX = 0; bmpX < bitmap.getWidth(); bmpX++) {
+      int screenX = x + (isScaled ? static_cast<int>(std::floor(bmpX * scale)) : bmpX);
+      if (screenX >= getScreenWidth()) {
+        break;
+      }
+      if (screenX < 0) {
+        continue;
+      }
+
+      const uint8_t val = outputRow[bmpX / 4] >> (6 - ((bmpX * 2) % 8)) & 0x3;
+
+      // Invert BW appearance: treat any non-white pixel as "ink" and draw it as white.
+      if (val < 3) {
+        drawPixel(screenX, screenY, false);
+      }
+    }
+  }
+
+  free(outputRow);
+  free(rowBytes);
+}
+
 void GfxRenderer::fillPolygon(const int* xPoints, const int* yPoints, int numPoints, bool state) const {
   if (numPoints < 3) return;
 
@@ -555,8 +687,7 @@ void GfxRenderer::drawButtonHints(const int fontId, const char* btn1, const char
   setOrientation(orig_orientation);
 }
 
-void GfxRenderer::drawSideButtonHints(const int fontId, const char* topBtn, const char* bottomBtn,
-                                       const bool black) const {
+void GfxRenderer::drawSideButtonHints(const int fontId, const char* topBtn, const char* bottomBtn, const bool black) const {
   const int screenWidth = getScreenWidth();
   constexpr int buttonWidth = 40;   // Width on screen (height when rotated)
   constexpr int buttonHeight = 80;  // Height on screen (width when rotated)

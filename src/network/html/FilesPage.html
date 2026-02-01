@@ -5,29 +5,105 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>CrossPoint Reader - Files</title>
   <style>
+    :root {
+      --bg-color: #f5f5f5;
+      --text-color: #333;
+      --card-bg: white;
+      --card-shadow: rgba(0, 0, 0, 0.1);
+      --h1-color: #2c3e50;
+      --h2-color: #34495e;
+      --border-color: #3498db;
+      --breadcrumb-color: #7f8c8d;
+      --breadcrumb-link: #3498db;
+      --breadcrumb-sep: #bdc3c7;
+      --breadcrumb-current: #2c3e50;
+      --table-header-bg: #f8f9fa;
+      --table-border: #eee;
+      --table-hover: #f8f9fa;
+      --epub-bg: #e8f6e9;
+      --epub-hover: #d4edda;
+      --folder-bg: #fff9e6;
+      --folder-hover: #fff3cd;
+      --file-info: #7f8c8d;
+      --no-files: #95a5a6;
+      --folder-link: #2c3e50;
+      --folder-link-hover: #3498db;
+      --input-border: #ddd;
+      --progress-bg: #e0e0e0;
+      --delete-btn: #95a5a6;
+      --delete-btn-hover-bg: #fee;
+      --delete-btn-hover: #e74c3c;
+      --failed-banner-bg: #fff3cd;
+      --failed-banner-border: #ffc107;
+      --failed-text: #856404;
+      --failed-border: #ffe69c;
+      --loader-border: #AAA;
+      --footer-color: #95a5a6;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg-color: #1a1a1a;
+        --text-color: #e0e0e0;
+        --card-bg: #2d2d2d;
+        --card-shadow: rgba(0, 0, 0, 0.3);
+        --h1-color: #e0e0e0;
+        --h2-color: #cccccc;
+        --border-color: #3498db;
+        --breadcrumb-color: #888;
+        --breadcrumb-link: #5dade2;
+        --breadcrumb-sep: #555;
+        --breadcrumb-current: #e0e0e0;
+        --table-header-bg: #3d3d3d;
+        --table-border: #444;
+        --table-hover: #3d3d3d;
+        --epub-bg: #1e3a1e;
+        --epub-hover: #2d5a2d;
+        --folder-bg: #3d3619;
+        --folder-hover: #4d4523;
+        --file-info: #888;
+        --no-files: #666;
+        --folder-link: #e0e0e0;
+        --folder-link-hover: #5dade2;
+        --input-border: #555;
+        --progress-bg: #444;
+        --delete-btn: #666;
+        --delete-btn-hover-bg: #4a1f1f;
+        --delete-btn-hover: #e74c3c;
+        --failed-banner-bg: #3d3619;
+        --failed-banner-border: #b8860b;
+        --failed-text: #d4a84b;
+        --failed-border: #4d4523;
+        --loader-border: #555;
+        --footer-color: #666;
+      }
+    }
+
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
       Oxygen, Ubuntu, sans-serif;
       max-width: 800px;
       margin: 0 auto;
       padding: 20px;
-      background-color: #f5f5f5;
-      color: #333;
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      transition: background-color 0.3s, color 0.3s;
     }
     h1 {
-      color: #2c3e50;
+      color: var(--h1-color);
       margin-bottom: 5px;
     }
     h2 {
-      color: #34495e;
+      color: var(--h2-color);
       margin-top: 0;
     }
     .card {
-      background: white;
+      background: var(--card-bg);
       border-radius: 8px;
       padding: 20px;
       margin: 15px 0;
-      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      box-shadow: 0 2px 4px var(--card-shadow);
+      transition: background-color 0.3s;
     }
     .page-header {
       display: flex;
@@ -37,7 +113,7 @@
       gap: 15px;
       margin-bottom: 20px;
       padding-bottom: 15px;
-      border-bottom: 2px solid #3498db;
+      border-bottom: 2px solid var(--border-color);
     }
     .page-header-left {
       display: flex;
@@ -46,11 +122,11 @@
       flex-wrap: wrap;
     }
     .breadcrumb-inline {
-      color: #7f8c8d;
+      color: var(--breadcrumb-color);
       font-size: 1.1em;
     }
     .breadcrumb-inline a {
-      color: #3498db;
+      color: var(--breadcrumb-link);
       text-decoration: none;
     }
     .breadcrumb-inline a:hover {
@@ -58,10 +134,10 @@
     }
     .breadcrumb-inline .sep {
       margin: 0 6px;
-      color: #bdc3c7;
+      color: var(--breadcrumb-sep);
     }
     .breadcrumb-inline .current {
-      color: #2c3e50;
+      color: var(--breadcrumb-current);
       font-weight: 500;
     }
     .nav-links {
@@ -70,14 +146,15 @@
     .nav-links a {
       display: inline-block;
       padding: 10px 20px;
-      background-color: #3498db;
+      background-color: var(--breadcrumb-link);
       color: white;
       text-decoration: none;
       border-radius: 4px;
       margin-right: 10px;
+      transition: background-color 0.2s;
     }
     .nav-links a:hover {
-      background-color: #2980b9;
+      background-color: var(--border-color);
     }
     /* Action buttons */
     .action-buttons {
@@ -125,7 +202,7 @@
       display: flex;
     }
     .modal {
-      background: white;
+      background: var(--card-bg);
       border-radius: 8px;
       padding: 25px;
       max-width: 450px;
@@ -134,7 +211,7 @@
     }
     .modal h3 {
       margin: 0 0 15px 0;
-      color: #2c3e50;
+      color: var(--h1-color);
     }
     .modal-close {
       float: right;
@@ -142,11 +219,11 @@
       border: none;
       font-size: 1.5em;
       cursor: pointer;
-      color: #7f8c8d;
+      color: var(--breadcrumb-color);
       line-height: 1;
     }
     .modal-close:hover {
-      color: #2c3e50;
+      color: var(--h1-color);
     }
     .file-table {
       width: 100%;
@@ -156,27 +233,27 @@
     .file-table td {
       padding: 12px;
       text-align: left;
-      border-bottom: 1px solid #eee;
+      border-bottom: 1px solid var(--table-border);
     }
     .file-table th {
-      background-color: #f8f9fa;
+      background-color: var(--table-header-bg);
       font-weight: 600;
-      color: #7f8c8d;
+      color: var(--breadcrumb-color);
     }
     .file-table tr:hover {
-      background-color: #f8f9fa;
+      background-color: var(--table-hover);
     }
     .epub-file {
-      background-color: #e8f6e9 !important;
+      background-color: var(--epub-bg) !important;
     }
     .epub-file:hover {
-      background-color: #d4edda !important;
+      background-color: var(--epub-hover) !important;
     }
     .folder-row {
-      background-color: #fff9e6 !important;
+      background-color: var(--folder-bg) !important;
     }
     .folder-row:hover {
-      background-color: #fff3cd !important;
+      background-color: var(--folder-hover) !important;
     }
     .epub-badge {
       display: inline-block;
@@ -200,12 +277,12 @@
       margin-right: 8px;
     }
     .folder-link {
-      color: #2c3e50;
+      color: var(--folder-link);
       text-decoration: none;
       cursor: pointer;
     }
     .folder-link:hover {
-      color: #3498db;
+      color: var(--folder-link-hover);
       text-decoration: underline;
     }
     .upload-form {
@@ -233,13 +310,13 @@
       cursor: not-allowed;
     }
     .file-info {
-      color: #7f8c8d;
+      color: var(--file-info);
       font-size: 0.85em;
       margin: 8px 0;
     }
     .no-files {
       text-align: center;
-      color: #95a5a6;
+      color: var(--no-files);
       padding: 40px;
       font-style: italic;
     }
@@ -249,14 +326,21 @@
       margin: 15px 0;
     }
     .message.success {
-      background-color: #d4edda;
-      color: #155724;
-      border: 1px solid #c3e6cb;
+      background-color: var(--epub-bg);
+      color: var(--text-color);
+      border: 1px solid var(--epub-hover);
     }
     .message.error {
       background-color: #f8d7da;
       color: #721c24;
       border: 1px solid #f5c6cb;
+    }
+    @media (prefers-color-scheme: dark) {
+      .message.error {
+        background-color: #4a1f1f;
+        color: #e74c3c;
+        border: 1px solid #5a2f2f;
+      }
     }
     .contents-header {
       display: flex;
@@ -267,11 +351,11 @@
     .contents-title {
       font-size: 1.1em;
       font-weight: 600;
-      color: #34495e;
+      color: var(--h2-color);
       margin: 0;
     }
     .summary-inline {
-      color: #7f8c8d;
+      color: var(--breadcrumb-color);
       font-size: 0.9em;
     }
     #progress-container {
@@ -281,7 +365,7 @@
     #progress-bar {
       width: 100%;
       height: 20px;
-      background-color: #e0e0e0;
+      background-color: var(--progress-bg);
       border-radius: 10px;
       overflow: hidden;
     }
@@ -295,7 +379,7 @@
       text-align: center;
       margin-top: 5px;
       font-size: 0.9em;
-      color: #7f8c8d;
+      color: var(--file-info);
     }
     .folder-form {
       margin-top: 10px;
@@ -303,11 +387,13 @@
     .folder-input {
       width: 100%;
       padding: 10px;
-      border: 1px solid #ddd;
+      border: 1px solid var(--input-border);
       border-radius: 4px;
       font-size: 1em;
       margin-bottom: 10px;
       box-sizing: border-box;
+      background-color: var(--card-bg);
+      color: var(--text-color);
     }
     .folder-btn {
       background-color: #f39c12;
@@ -330,12 +416,12 @@
       font-size: 1.1em;
       padding: 4px 8px;
       border-radius: 4px;
-      color: #95a5a6;
+      color: var(--delete-btn);
       transition: all 0.15s;
     }
     .delete-btn:hover {
-      background-color: #fee;
-      color: #e74c3c;
+      background-color: var(--delete-btn-hover-bg);
+      color: var(--delete-btn-hover);
     }
     .actions-col {
       width: 60px;
@@ -343,8 +429,8 @@
     }
     /* Failed uploads banner */
     .failed-uploads-banner {
-      background-color: #fff3cd;
-      border: 1px solid #ffc107;
+      background-color: var(--failed-banner-bg);
+      border: 1px solid var(--failed-banner-border);
       border-radius: 4px;
       padding: 15px;
       margin-bottom: 15px;
@@ -361,7 +447,7 @@
     }
     .failed-uploads-title {
       font-weight: 600;
-      color: #856404;
+      color: var(--failed-text);
       margin: 0;
     }
     .dismiss-btn {
@@ -369,19 +455,19 @@
       border: none;
       font-size: 1.2em;
       cursor: pointer;
-      color: #856404;
+      color: var(--failed-text);
       padding: 0;
       line-height: 1;
     }
     .dismiss-btn:hover {
-      color: #533f03;
+      color: var(--text-color);
     }
     .failed-file-item {
       display: flex;
       justify-content: space-between;
       align-items: center;
       padding: 8px 0;
-      border-bottom: 1px solid #ffe69c;
+      border-bottom: 1px solid var(--failed-border);
     }
     .failed-file-item:last-child {
       border-bottom: none;
@@ -391,11 +477,11 @@
     }
     .failed-file-name {
       font-weight: 500;
-      color: #856404;
+      color: var(--failed-text);
     }
     .failed-file-error {
       font-size: 0.85em;
-      color: #856404;
+      color: var(--failed-text);
       opacity: 0.8;
     }
     .retry-btn {
@@ -433,7 +519,7 @@
     }
     .delete-item-name {
       font-weight: 600;
-      color: #2c3e50;
+      color: var(--h1-color);
       word-break: break-all;
     }
     .delete-btn-confirm {
@@ -472,7 +558,7 @@
     .loader {
       width: 48px;
       height: 48px;
-      border: 5px solid #AAA;
+      border: 5px solid var(--loader-border);
       border-bottom-color: transparent;
       border-radius: 50%;
       display: inline-block;
@@ -613,7 +699,7 @@
 </div>
 
 <div class="card">
-  <p style="text-align: center; color: #95a5a6; margin: 0;">
+  <p style="text-align: center; color: var(--footer-color); margin: 0;">
     CrossPoint E-Reader • Open Source
   </p>
 </div>

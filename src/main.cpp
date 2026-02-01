@@ -3,6 +3,7 @@
 #include <GfxRenderer.h>
 #include <HalDisplay.h>
 #include <HalGPIO.h>
+#include <InputManager.h>
 #include <SDCardManager.h>
 #include <SPI.h>
 #include <builtinFonts/all.h>
@@ -26,6 +27,23 @@
 #include "activities/util/FullScreenMessageActivity.h"
 #include "fontIds.h"
 #include "images/CrossLarge.h"
+
+namespace {
+bool ignorePowerHoldUntilRelease = false;
+
+bool isPowerPressedRaw() {
+  // Power button is digital active LOW.
+  return digitalRead(InputManager::POWER_BUTTON_PIN) == LOW;
+}
+
+void renderOpeningScreen(GfxRenderer& renderer) {
+  const auto pageWidth = renderer.getScreenWidth();
+  const auto pageHeight = renderer.getScreenHeight();
+  renderer.clearScreen(0xFF);
+  renderer.drawCenteredText(UI_12_FONT_ID, pageHeight / 2 - 10, "Opening...", true, EpdFontFamily::BOLD);
+  renderer.displayBuffer(HalDisplay::FAST_REFRESH);
+}
+}  // namespace
 
 HalDisplay display;
 HalGPIO gpio;
@@ -122,10 +140,6 @@ EpdFont ui12RegularFont(&ubuntu_12_regular);
 EpdFont ui12BoldFont(&ubuntu_12_bold);
 EpdFontFamily ui12FontFamily(&ui12RegularFont, &ui12BoldFont);
 
-// measurement of power button press duration calibration value
-unsigned long t1 = 0;
-unsigned long t2 = 0;
-
 void exitActivity() {
   if (currentActivity) {
     currentActivity->onExit();
@@ -137,40 +151,6 @@ void exitActivity() {
 void enterNewActivity(Activity* activity) {
   currentActivity = activity;
   currentActivity->onEnter();
-}
-
-// Verify power button press duration on wake-up from deep sleep
-// Pre-condition: isWakeupByPowerButton() == true
-void verifyPowerButtonDuration() {
-  if (SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::SLEEP) {
-    // Fast path for short press
-    // Needed because inputManager.isPressed() may take up to ~500ms to return the correct state
-    return;
-  }
-
-  // Must hold for SETTINGS.getPowerButtonDuration() (match sleep timing)
-  const uint16_t requiredDuration = SETTINGS.getPowerButtonDuration();
-  gpio.update();
-  t2 = millis();
-
-  if (!gpio.isPressed(HalGPIO::BTN_POWER)) {
-    // Button already released - return to sleep
-    gpio.startDeepSleep();
-    return;
-  }
-
-  while (gpio.isPressed(HalGPIO::BTN_POWER) && gpio.getHeldTime() < requiredDuration) {
-    delay(10);
-    gpio.update();
-  }
-
-  if (!gpio.isPressed(HalGPIO::BTN_POWER) || gpio.getHeldTime() < requiredDuration) {
-    // Button released too early. Returning to sleep.
-    // IMPORTANT: Re-arm the wakeup trigger before sleeping again
-    if (!gpio.isUsbConnected()) {
-      gpio.startDeepSleep();
-    }
-  }
 }
 
 void waitForPowerRelease() {
@@ -187,7 +167,6 @@ void enterDeepSleep() {
   enterNewActivity(new SleepActivity(renderer, mappedInputManager));
 
   display.deepSleep();
-  Serial.printf("[%lu] [   ] Power button press calibration value: %lu ms\n", millis(), t2 - t1);
   Serial.printf("[%lu] [   ] Entering deep sleep.\n", millis());
 
   gpio.startDeepSleep();
@@ -255,40 +234,7 @@ void setupDisplayAndFonts() {
 }
 
 void setup() {
-  t1 = millis();
-
   gpio.begin();
-
-  // Initialize display early so we can provide immediate visual feedback
-  // while verifying the power button hold duration. Use a fast refresh
-  // to avoid the long HALF_REFRESH delay.
-  display.begin();
-  renderer.insertFont(UI_10_FONT_ID, ui10FontFamily);
-  renderer.insertFont(UI_12_FONT_ID, ui12FontFamily);
-  renderer.insertFont(SMALL_FONT_ID, smallFontFamily);
-
-  if (gpio.isWakeupByPowerButton() && !gpio.isUsbConnected()) {
-    // Show a minimal "Opening..." indicator using FAST_REFRESH so user
-    // gets immediate feedback while we verify the hold duration.
-    const auto pageHeight = renderer.getScreenHeight();
-    renderer.clearScreen();
-    renderer.drawCenteredText(UI_12_FONT_ID, pageHeight / 2 - 10, "Opening...", true,
-                              EpdFontFamily::BOLD);
-    renderer.displayBuffer(HalDisplay::FAST_REFRESH);
-
-    Serial.printf("[%lu] [   ] Verifying power button press duration\n", millis());
-    verifyPowerButtonDuration();
-  }
-
-  // Only start serial if USB connected - reduced wait time
-  if (gpio.isUsbConnected()) {
-    Serial.begin(115200);
-    // Wait up to 500ms for Serial to be ready
-    unsigned long start = millis();
-    while (!Serial && (millis() - start) < 500) {
-      delay(10);
-    }
-  }
 
   // Initialize display early to show boot screen ASAP
   display.begin();
@@ -296,9 +242,49 @@ void setup() {
   renderer.insertFont(UI_12_FONT_ID, ui12FontFamily);
   renderer.insertFont(SMALL_FONT_ID, smallFontFamily);
 
+  // Wake gating: require a consistent hold, then show "Opening..." as the release signal.
+  // This runs BEFORE SD init so the user can release early and boot continues.
+  if (gpio.isWakeupByPowerButton() && !gpio.isUsbConnected()) {
+    constexpr uint16_t requiredHoldMs = 400;
+    const unsigned long start = millis();
+
+    // If power isn't still held, immediately go back to sleep.
+    if (!isPowerPressedRaw()) {
+      gpio.startDeepSleep();
+      return;
+    }
+
+    while (isPowerPressedRaw() && (millis() - start) < requiredHoldMs) {
+      delay(5);
+    }
+
+    // Released too early: back to sleep.
+    if (!isPowerPressedRaw()) {
+      gpio.startDeepSleep();
+      return;
+    }
+
+    // Hold satisfied: show Opening and continue boot even if released now.
+    renderOpeningScreen(renderer);
+    ignorePowerHoldUntilRelease = true;
+    mappedInputManager.resetPowerGestures();
+  } else {
+    // For non-battery boots, still provide quick feedback.
+    renderOpeningScreen(renderer);
+  }
+
   // SD Card Initialization first (needed for wallpaper)
   // We need 6 open files concurrently when parsing a new chapter
   if (!SdMan.begin()) {
+    // Only start serial if USB connected - reduced wait time
+    if (gpio.isUsbConnected()) {
+      Serial.begin(115200);
+      // Wait up to 500ms for Serial to be ready
+      unsigned long start = millis();
+      while (!Serial && (millis() - start) < 500) {
+        delay(10);
+      }
+    }
     Serial.printf("[%lu] [   ] SD card initialization failed\n", millis());
     // Show error screen with default CrossPoint logo since we can't load wallpaper
     const auto pageWidth = renderer.getScreenWidth();
@@ -311,12 +297,19 @@ void setup() {
     return;
   }
 
-  // Load settings and app state early (needed for wallpaper selection)
+  // Load settings and app state early
   SETTINGS.loadFromFile();
   APP_STATE.loadFromFile();
 
-  // Now show boot screen with user's wallpaper + "Opening..." popup
-  enterNewActivity(new BootActivity(renderer, mappedInputManager));
+  // Only start serial if USB connected - reduced wait time
+  if (gpio.isUsbConnected()) {
+    Serial.begin(115200);
+    // Wait up to 500ms for Serial to be ready
+    unsigned long start = millis();
+    while (!Serial && (millis() - start) < 500) {
+      delay(10);
+    }
+  }
 
   // Load remaining stores
   KOREADER_STORE.loadFromFile();
@@ -329,7 +322,7 @@ void setup() {
 
   RECENT_BOOKS.loadFromFile();
 
-  // Exit boot activity before entering main activity
+  // Exit any boot activity before entering main activity
   exitActivity();
 
   if (APP_STATE.openEpubPath.empty()) {
@@ -353,6 +346,22 @@ void loop() {
   static unsigned long lastMemPrint = 0;
 
   gpio.update();
+  mappedInputManager.updateGestures();
+
+  // Ignore a long hold immediately after wake until the first release.
+  if (ignorePowerHoldUntilRelease && gpio.wasReleased(HalGPIO::BTN_POWER)) {
+    ignorePowerHoldUntilRelease = false;
+    mappedInputManager.resetPowerGestures();
+  }
+
+  // Global double-tap power button to toggle theme.
+  if (mappedInputManager.consumePowerDoubleTap()) {
+    SETTINGS.readerDarkMode = !SETTINGS.readerDarkMode;
+    SETTINGS.saveToFile();
+    if (currentActivity) {
+      currentActivity->requestCleanScreenRefresh();
+    }
+  }
 
   if (Serial && millis() - lastMemPrint >= 10000) {
     Serial.printf("[%lu] [MEM] Free: %d bytes, Total: %d bytes, Min Free: %d bytes\n", millis(), ESP.getFreeHeap(),
@@ -374,7 +383,8 @@ void loop() {
     return;
   }
 
-  if (gpio.isPressed(HalGPIO::BTN_POWER) && gpio.getHeldTime() > SETTINGS.getPowerButtonDuration()) {
+  if (!ignorePowerHoldUntilRelease && gpio.isPressed(HalGPIO::BTN_POWER) &&
+      gpio.getHeldTime() > SETTINGS.getPowerButtonDuration()) {
     enterDeepSleep();
     // This should never be hit as `enterDeepSleep` calls esp_deep_sleep_start
     return;

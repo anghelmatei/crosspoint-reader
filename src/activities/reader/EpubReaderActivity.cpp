@@ -22,7 +22,6 @@ constexpr unsigned long skipChapterMs = 700;
 constexpr unsigned long goHomeMs = 1000;
 constexpr int statusBarMargin = 19;
 constexpr int progressBarMarginTop = 1;
-
 }  // namespace
 
 void EpubReaderActivity::taskTrampoline(void* param) {
@@ -174,8 +173,8 @@ void EpubReaderActivity::loop() {
     return;
   }
 
-  const bool powerReleased = mappedInput.wasReleased(MappedInputManager::Button::Power);
-  if (powerReleased && SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::ORIENTATION_CYCLE) {
+  const bool powerTap = mappedInput.consumePowerSingleTap();
+  if (powerTap && SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::ORIENTATION_CYCLE) {
     cycleOrientationPreservePosition();
     return;
   }
@@ -186,7 +185,7 @@ void EpubReaderActivity::loop() {
                                                     mappedInput.wasPressed(MappedInputManager::Button::Left))
                                                  : (mappedInput.wasReleased(MappedInputManager::Button::PageBack) ||
                                                     mappedInput.wasReleased(MappedInputManager::Button::Left));
-  const bool powerPageTurn = SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::PAGE_TURN && powerReleased;
+  const bool powerPageTurn = SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::PAGE_TURN && powerTap;
   const bool nextTriggered = usePressForPageTurn
                                  ? (mappedInput.wasPressed(MappedInputManager::Button::PageForward) || powerPageTurn ||
                                     mappedInput.wasPressed(MappedInputManager::Button::Right))

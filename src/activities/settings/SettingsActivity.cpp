@@ -51,7 +51,7 @@ const SettingInfo readerSettings[readerSettingsCount] = {
     SettingInfo::Toggle("Extra Paragraph Spacing", &CrossPointSettings::extraParagraphSpacing),
     SettingInfo::Toggle("Text Anti-Aliasing", &CrossPointSettings::textAntiAliasing)};
 
-constexpr int controlsSettingsCount = 4;
+constexpr int controlsSettingsCount = 5;
 const SettingInfo controlsSettings[controlsSettingsCount] = {
     SettingInfo::Enum(
         "Front Button Layout", &CrossPointSettings::frontButtonLayout,
@@ -60,7 +60,9 @@ const SettingInfo controlsSettings[controlsSettingsCount] = {
                       {"Prev, Next", "Next, Prev"}),
     SettingInfo::Toggle("Long-press Chapter Skip", &CrossPointSettings::longPressChapterSkip),
   SettingInfo::Enum("Short Power Button Click", &CrossPointSettings::shortPwrBtn,
-            {"Ignore", "Sleep", "Page Turn", "Orientation Cycle"})};
+            {"Ignore", "Sleep", "Page Turn", "Orientation Cycle"}),
+    SettingInfo::Enum("Double-Tap Power Button", &CrossPointSettings::doubleTapPwrBtn,
+                      {"Ignore", "Toggle Dark Mode"})};
 
 constexpr int systemSettingsCount = 5;
 const SettingInfo systemSettings[systemSettingsCount] = {
@@ -323,59 +325,22 @@ void SettingsActivity::render() const {
 
   const int pageItems = getPageItems();
   const int totalItems = static_cast<int>(settingsItems.size());
-  int pageStartIndex = (pageItems > 0) ? (selectedItemIndex / pageItems * pageItems) : 0;
+  const int pageStartIndex = (pageItems > 0) ? (selectedItemIndex / pageItems * pageItems) : 0;
+  const int renderEndIndex = std::min(totalItems, pageStartIndex + pageItems);
 
-  auto computeReservedRows = [&](int startIndex) {
-    const bool moreAbove = startIndex > 0;
-    const bool moreBelow = (startIndex + pageItems) < totalItems;
-    const int reservedTop = moreAbove ? 1 : 0;
-    const int reservedBottom = moreBelow ? 1 : 0;
-    int visibleRows = pageItems - reservedTop - reservedBottom;
-    if (visibleRows < 1) {
-      visibleRows = 1;
-    }
-    return std::make_tuple(moreAbove, moreBelow, reservedTop, reservedBottom, visibleRows);
-  };
-
-  bool hasMoreAbove = false;
-  bool hasMoreBelow = false;
-  int reservedTop = 0;
-  int reservedBottom = 0;
-  int visibleRows = 1;
-  std::tie(hasMoreAbove, hasMoreBelow, reservedTop, reservedBottom, visibleRows) = computeReservedRows(pageStartIndex);
-
-  // Keep the selected item within the visible rows (excluding the reserved "(more)" rows)
-  if (selectedItemIndex < pageStartIndex) {
-    pageStartIndex = selectedItemIndex;
-  } else if (selectedItemIndex >= pageStartIndex + visibleRows) {
-    pageStartIndex = selectedItemIndex - visibleRows + 1;
-  }
-  if (pageStartIndex < 0) {
-    pageStartIndex = 0;
-  } else if (pageStartIndex > totalItems - 1) {
-    pageStartIndex = std::max(0, totalItems - 1);
-  }
-
-  std::tie(hasMoreAbove, hasMoreBelow, reservedTop, reservedBottom, visibleRows) = computeReservedRows(pageStartIndex);
-
-  if (isSelectableIndex(selectedItemIndex)) {
-    renderer.fillRect(0,
-                      SETTINGS_TOP_Y + (selectedItemIndex - pageStartIndex + reservedTop) * LINE_HEIGHT - 2,
+  if (isSelectableIndex(selectedItemIndex) && selectedItemIndex >= pageStartIndex && selectedItemIndex < renderEndIndex) {
+    renderer.fillRect(0, SETTINGS_TOP_Y + (selectedItemIndex - pageStartIndex) * LINE_HEIGHT - 2,
                       pageWidth - 1, LINE_HEIGHT, !darkMode);
   }
 
-  const int renderEndIndex = std::min(totalItems, pageStartIndex + visibleRows);
   for (int i = pageStartIndex; i < renderEndIndex; i++) {
-    const int itemY = SETTINGS_TOP_Y + (i - pageStartIndex + reservedTop) * LINE_HEIGHT;
+    const int itemY = SETTINGS_TOP_Y + (i - pageStartIndex) * LINE_HEIGHT;
     const auto& item = settingsItems[i];
 
     if (item.type == SettingsItemType::Header) {
       renderer.drawText(UI_10_FONT_ID, 20, itemY, item.header, !darkMode, EpdFontFamily::BOLD);
-      const int textWidth = renderer.getTextWidth(UI_10_FONT_ID, item.header, EpdFontFamily::BOLD);
-      const int lineStart = 20 + textWidth + 10;
-      if (lineStart < pageWidth - 20) {
-        renderer.drawLine(lineStart, itemY + 8, pageWidth - 20, itemY + 8, !darkMode);
-      }
+      const int underlineY = itemY + renderer.getLineHeight(UI_10_FONT_ID) + 3;
+      renderer.drawLine(20, underlineY, pageWidth - 20, underlineY, !darkMode);
       continue;
     }
 
@@ -399,19 +364,14 @@ void SettingsActivity::render() const {
     }
   }
 
-  // Draw "(more)" indicators as reserved rows at first/last position of the page
-  if (hasMoreAbove) {
-    renderer.drawText(UI_10_FONT_ID, 20, SETTINGS_TOP_Y, "(more)", !darkMode);
-  }
-  if (hasMoreBelow) {
-    const int lastRowY = SETTINGS_TOP_Y + (pageItems - 1) * LINE_HEIGHT;
-    renderer.drawText(UI_10_FONT_ID, 20, lastRowY, "(more)", !darkMode);
-  }
-
   // Draw help text
   const auto labels = mappedInput.mapLabels("« Back", "Toggle", "Up", "Down");
   renderer.drawButtonHints(UI_10_FONT_ID, labels.btn1, labels.btn2, labels.btn3, labels.btn4, !darkMode);
 
-  // Always use standard refresh for settings screen
-  renderer.displayBuffer();
+  // Avoid flashy refreshes on UI pages: use FAST by default.
+  // Allow an explicit one-shot slower refresh for cleanup (e.g., after a theme toggle).
+  const HalDisplay::RefreshMode refreshMode = (darkMode && cleanRefreshNext) ? HalDisplay::HALF_REFRESH
+                                                                            : HalDisplay::FAST_REFRESH;
+  renderer.displayBuffer(refreshMode);
+  cleanRefreshNext = false;
 }

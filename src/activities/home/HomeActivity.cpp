@@ -357,8 +357,13 @@ void HomeActivity::render() {
             imgY = bookY + (bookHeight - bitmap.getHeight()) / 2;
           }
 
-          // Draw the cover image centered (no border)
-          renderer.drawBitmap(bitmap, imgX, imgY, bookWidth, bookHeight);
+          // In dark mode, invert the cover pixels (white-on-black) so the cover stays visible
+          // without turning the whole container into a white block.
+          if (darkMode) {
+            renderer.drawBitmapInverted(bitmap, imgX, imgY, bookWidth, bookHeight);
+          } else {
+            renderer.drawBitmap(bitmap, imgX, imgY, bookWidth, bookHeight);
+          }
 
           // Store the buffer with cover image for fast navigation
           coverBufferStored = storeCoverBuffer();
@@ -518,5 +523,10 @@ void HomeActivity::render() {
     constexpr int batteryMarginBottom = 30;
     ScreenComponents::drawBattery(renderer, margin + 1, pageHeight - batteryMarginBottom, showBatteryPercentage, !darkMode);
 
-  renderer.displayBuffer();
+  // Avoid flashy refreshes on UI pages: use FAST by default.
+  // Allow an explicit one-shot slower refresh for cleanup (e.g., after a theme toggle).
+  const HalDisplay::RefreshMode refreshMode = (darkMode && cleanRefreshNext) ? HalDisplay::HALF_REFRESH
+                                                                            : HalDisplay::FAST_REFRESH;
+  renderer.displayBuffer(refreshMode);
+  cleanRefreshNext = false;
 }

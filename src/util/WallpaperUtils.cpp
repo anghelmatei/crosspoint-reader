@@ -99,20 +99,12 @@ void renderWallpaperBitmap(GfxRenderer& renderer, const Bitmap& bitmap, const bo
   const bool hasGreyscale = bitmap.hasGreyscale() &&
                             filter == CrossPointSettings::SLEEP_SCREEN_COVER_FILTER::NO_FILTER;
 
-  // Check if we should invert for dark mode compatibility
-  // Invert dark images when in dark mode so they're visible
-  const bool shouldInvertForDarkMode = SETTINGS.readerDarkMode && !hasGreyscale;
-
   renderer.drawBitmap(bitmap, x, y, pageWidth, pageHeight, cropX, cropY);
 
-  // Apply filter-based inversion
-  if (filter == CrossPointSettings::SLEEP_SCREEN_COVER_FILTER::INVERTED_BLACK_AND_WHITE) {
-    renderer.invertScreen();
-  }
-  // Apply dark mode inversion for predominantly dark bitmaps
-  else if (shouldInvertForDarkMode) {
-    // Only invert if the image appears to be predominantly dark (would be invisible on black background)
-    // For sleep screen covers, we assume book covers with dark artwork need inversion
+  // Apply filter-based inversion only when explicitly requested
+  const bool invertRequested =
+      filter == CrossPointSettings::SLEEP_SCREEN_COVER_FILTER::INVERTED_BLACK_AND_WHITE;
+  if (invertRequested) {
     renderer.invertScreen();
   }
 
@@ -124,12 +116,24 @@ void renderWallpaperBitmap(GfxRenderer& renderer, const Bitmap& bitmap, const bo
     bitmap.rewindToData();
     renderer.setRenderMode(GfxRenderer::GRAYSCALE_LSB);
     renderer.drawBitmap(bitmap, x, y, pageWidth, pageHeight, cropX, cropY);
+    if (invertRequested) {
+      renderer.invertScreen();
+    }
     renderer.copyGrayscaleLsbBuffers();
+    if (invertRequested) {
+      renderer.invertScreen();
+    }
 
     bitmap.rewindToData();
     renderer.setRenderMode(GfxRenderer::GRAYSCALE_MSB);
     renderer.drawBitmap(bitmap, x, y, pageWidth, pageHeight, cropX, cropY);
+    if (invertRequested) {
+      renderer.invertScreen();
+    }
     renderer.copyGrayscaleMsbBuffers();
+    if (invertRequested) {
+      renderer.invertScreen();
+    }
 
     renderer.displayGrayBuffer();
     renderer.setRenderMode(GfxRenderer::BW);
