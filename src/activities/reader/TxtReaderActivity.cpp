@@ -583,7 +583,7 @@ void TxtReaderActivity::renderStatusBar(const int orientedMarginRight, const int
   }
 
   if (showBattery) {
-    ScreenComponents::drawBattery(renderer, orientedMarginLeft, textY, showBatteryPercentage, true);
+    ScreenComponents::drawBattery(renderer, orientedMarginLeft, textY, showBatteryPercentage, !SETTINGS.readerDarkMode);
   }
 
   if (showTitle) {

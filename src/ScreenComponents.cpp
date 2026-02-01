@@ -8,12 +8,15 @@
 #include "Battery.h"
 #include "fontIds.h"
 
-void ScreenComponents::drawBattery(const GfxRenderer& renderer, const int left, const int top,
+void ScreenComponents::drawBattery(GfxRenderer& renderer, const int left, const int top,
                                    const bool showPercentage, const bool black) {
   // Left aligned battery icon and percentage
   const uint16_t percentage = battery.readPercentage();
   const auto percentageText = showPercentage ? std::to_string(percentage) + "%" : "";
+  const bool wasTextInverted = renderer.isTextInverted();
+  renderer.setTextInverted(false);
   renderer.drawText(SMALL_FONT_ID, left + 20, top, percentageText.c_str(), black);
+  renderer.setTextInverted(wasTextInverted);
 
   // 1 column on left, 2 columns on right, 5 columns of battery body
   constexpr int batteryWidth = 15;

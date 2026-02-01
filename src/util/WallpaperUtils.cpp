@@ -62,7 +62,8 @@ bool openCustomWallpaperFile(const size_t index, FsFile& file, std::string& file
   return SdMan.openFileForRead("WAL", filename, file);
 }
 
-void renderWallpaperBitmap(GfxRenderer& renderer, const Bitmap& bitmap, const bool crop, const uint8_t filter, const bool displayAfterRender) {
+void renderWallpaperBitmap(GfxRenderer& renderer, const Bitmap& bitmap, const bool crop, const uint8_t filter,
+                           const bool displayAfterRender, const HalDisplay::RefreshMode refreshMode) {
   int x = 0;
   int y = 0;
   const auto pageWidth = renderer.getScreenWidth();
@@ -109,7 +110,7 @@ void renderWallpaperBitmap(GfxRenderer& renderer, const Bitmap& bitmap, const bo
   }
 
   if (displayAfterRender) {
-    renderer.displayBuffer(HalDisplay::HALF_REFRESH);
+    renderer.displayBuffer(refreshMode);
   }
 
   if (hasGreyscale && displayAfterRender) {

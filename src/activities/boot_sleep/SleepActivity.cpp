@@ -15,7 +15,9 @@
 
 void SleepActivity::onEnter() {
   Activity::onEnter();
-  renderPopup("Entering Sleep...");
+
+  // Skip the transient "Entering Sleep..." popup and go straight to the sleep screen.
+  // This avoids an extra refresh and makes sleep/shutdown feel much faster.
 
   if (SETTINGS.sleepScreen == CrossPointSettings::SLEEP_SCREEN_MODE::BLANK) {
     return renderBlankSleepScreen();
@@ -64,7 +66,7 @@ void SleepActivity::renderCustomSleepScreen() const {
       if (bitmap.parseHeaders() == BmpReaderError::Ok) {
         renderWallpaperBitmap(renderer, bitmap,
                               SETTINGS.sleepScreenCoverMode == CrossPointSettings::SLEEP_SCREEN_COVER_MODE::CROP,
-                              SETTINGS.sleepScreenCoverFilter);
+                              SETTINGS.sleepScreenCoverFilter, true, HalDisplay::FAST_REFRESH);
         return;
       }
     }
@@ -78,7 +80,7 @@ void SleepActivity::renderCustomSleepScreen() const {
       Serial.printf("[%lu] [SLP] Loading: /sleep.bmp\n", millis());
       renderWallpaperBitmap(renderer, bitmap,
                             SETTINGS.sleepScreenCoverMode == CrossPointSettings::SLEEP_SCREEN_COVER_MODE::CROP,
-                            SETTINGS.sleepScreenCoverFilter);
+                            SETTINGS.sleepScreenCoverFilter, true, HalDisplay::FAST_REFRESH);
       return;
     }
   }

@@ -37,11 +37,27 @@ bool isPowerPressedRaw() {
 }
 
 void renderOpeningScreen(GfxRenderer& renderer) {
-  const auto pageWidth = renderer.getScreenWidth();
-  const auto pageHeight = renderer.getScreenHeight();
-  renderer.clearScreen(0xFF);
-  renderer.drawCenteredText(UI_12_FONT_ID, pageHeight / 2 - 10, "Opening...", true, EpdFontFamily::BOLD);
-  renderer.displayBuffer(HalDisplay::FAST_REFRESH);
+  // Draw an "Opening..." popup over whatever image the e-ink panel currently holds
+  // (typically the sleep cover screen). Avoid a full-screen clear+refresh which would
+  // replace the wallpaper with a blank page.
+  constexpr const char* message = "Opening...";
+  const int textWidth = renderer.getTextWidth(UI_12_FONT_ID, message, EpdFontFamily::BOLD);
+  constexpr int margin = 20;
+  int x = (renderer.getScreenWidth() - textWidth - margin * 2) / 2;
+  if (x < 0) x = 0;
+  constexpr int y = 117;
+  const int w = textWidth + margin * 2;
+  const int h = renderer.getLineHeight(UI_12_FONT_ID) + margin * 2;
+
+  // Settings aren't loaded this early, so default to a light popup.
+  const bool darkMode = false;
+
+  // Fully paint the popup region so it's safe even if the framebuffer contains junk
+  // after deep sleep; then only update that window on the panel.
+  renderer.fillRect(x - 5, y - 5, w + 10, h + 10, !darkMode);
+  renderer.fillRect(x + 5, y + 5, w - 10, h - 10, darkMode);
+  renderer.drawText(UI_12_FONT_ID, x + margin, y + margin, message, !darkMode, EpdFontFamily::BOLD);
+  renderer.displayWindow(x - 5, y - 5, w + 10, h + 10);
 }
 }  // namespace
 
@@ -245,7 +261,7 @@ void setup() {
   // Wake gating: require a consistent hold, then show "Opening..." as the release signal.
   // This runs BEFORE SD init so the user can release early and boot continues.
   if (gpio.isWakeupByPowerButton() && !gpio.isUsbConnected()) {
-    constexpr uint16_t requiredHoldMs = 400;
+    constexpr uint16_t requiredHoldMs = 300;
     const unsigned long start = millis();
 
     // If power isn't still held, immediately go back to sleep.

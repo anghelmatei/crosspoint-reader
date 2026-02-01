@@ -357,6 +357,18 @@ void SettingsActivity::render() const {
       valueText = item.setting->enumValues[value];
     } else if (item.setting->type == SettingType::VALUE && item.setting->valuePtr != nullptr) {
       valueText = std::to_string(SETTINGS.*(item.setting->valuePtr));
+    } else if (item.setting->type == SettingType::ACTION && strcmp(item.setting->name, "Next Wallpaper") == 0) {
+      std::vector<std::string> files;
+      if (listCustomWallpapers(files)) {
+        size_t selectedIndex = APP_STATE.lastSleepImage;
+        if (selectedIndex >= files.size()) {
+          selectedIndex = 0;
+        }
+        valueText = files[selectedIndex];
+        if (valueText.size() > 4 && valueText.substr(valueText.size() - 4) == ".bmp") {
+          valueText = valueText.substr(0, valueText.size() - 4);
+        }
+      }
     }
     if (!valueText.empty()) {
       const auto width = renderer.getTextWidth(UI_10_FONT_ID, valueText.c_str());
