@@ -65,8 +65,8 @@ void SleepActivity::renderCustomSleepScreen() const {
       Bitmap bitmap(file, true);
       if (bitmap.parseHeaders() == BmpReaderError::Ok) {
         renderWallpaperBitmap(renderer, bitmap,
-                              SETTINGS.sleepScreenCoverMode == CrossPointSettings::SLEEP_SCREEN_COVER_MODE::CROP,
-                              SETTINGS.sleepScreenCoverFilter, true, HalDisplay::FAST_REFRESH);
+                  SETTINGS.sleepScreenCoverMode == CrossPointSettings::SLEEP_SCREEN_COVER_MODE::CROP,
+                  SETTINGS.sleepScreenCoverFilter, true, HalDisplay::HALF_REFRESH);
         return;
       }
     }
@@ -79,8 +79,8 @@ void SleepActivity::renderCustomSleepScreen() const {
     if (bitmap.parseHeaders() == BmpReaderError::Ok) {
       Serial.printf("[%lu] [SLP] Loading: /sleep.bmp\n", millis());
       renderWallpaperBitmap(renderer, bitmap,
-                            SETTINGS.sleepScreenCoverMode == CrossPointSettings::SLEEP_SCREEN_COVER_MODE::CROP,
-                            SETTINGS.sleepScreenCoverFilter, true, HalDisplay::FAST_REFRESH);
+                SETTINGS.sleepScreenCoverMode == CrossPointSettings::SLEEP_SCREEN_COVER_MODE::CROP,
+                SETTINGS.sleepScreenCoverFilter, true, HalDisplay::HALF_REFRESH);
       return;
     }
   }
