@@ -21,6 +21,14 @@
 namespace {
 constexpr unsigned long skipPageMs = 700;
 constexpr unsigned long goHomeMs = 1000;
+
+int getEffectiveRefreshFrequency(const bool darkMode, const int refreshFrequency) {
+  if (!darkMode) {
+    return refreshFrequency;
+  }
+  const int reduced = refreshFrequency / 2;
+  return (reduced > 1) ? reduced : 1;
+}
 }  // namespace
 
 void XtcReaderActivity::taskTrampoline(void* param) {
@@ -281,16 +289,17 @@ void XtcReaderActivity::renderPage() {
     //   cumulative ghosting without paying the cost of HALF refresh every page.
     const bool darkMode = SETTINGS.readerDarkMode;
     const int refreshFrequency = SETTINGS.getRefreshFrequency();
+    const int effectiveRefreshFrequency = getEffectiveRefreshFrequency(darkMode, refreshFrequency);
     if (pagesUntilFullRefresh <= 1) {
       renderer.displayBuffer(HalDisplay::HALF_REFRESH);
-      pagesUntilFullRefresh = refreshFrequency;
+      pagesUntilFullRefresh = effectiveRefreshFrequency;
     } else {
       renderer.displayBuffer(HalDisplay::FAST_REFRESH);
       pagesUntilFullRefresh--;
 
       if (darkMode) {
         constexpr int darkModeFastBoostEveryNPages = 3;
-        const int pagesSinceCleanRefresh = refreshFrequency - pagesUntilFullRefresh;
+        const int pagesSinceCleanRefresh = effectiveRefreshFrequency - pagesUntilFullRefresh;
         if (darkModeFastBoostEveryNPages > 0 && pagesSinceCleanRefresh > 0 &&
             (pagesSinceCleanRefresh % darkModeFastBoostEveryNPages) == 0) {
           renderer.displayBuffer(HalDisplay::FAST_REFRESH);
@@ -372,16 +381,17 @@ void XtcReaderActivity::renderPage() {
   // Display with appropriate refresh
   const bool darkMode = SETTINGS.readerDarkMode;
   const int refreshFrequency = SETTINGS.getRefreshFrequency();
+  const int effectiveRefreshFrequency = getEffectiveRefreshFrequency(darkMode, refreshFrequency);
   if (pagesUntilFullRefresh <= 1) {
     renderer.displayBuffer(HalDisplay::HALF_REFRESH);
-    pagesUntilFullRefresh = refreshFrequency;
+    pagesUntilFullRefresh = effectiveRefreshFrequency;
   } else {
     renderer.displayBuffer(HalDisplay::FAST_REFRESH);
     pagesUntilFullRefresh--;
 
     if (darkMode) {
       constexpr int darkModeFastBoostEveryNPages = 3;
-      const int pagesSinceCleanRefresh = refreshFrequency - pagesUntilFullRefresh;
+      const int pagesSinceCleanRefresh = effectiveRefreshFrequency - pagesUntilFullRefresh;
       if (darkModeFastBoostEveryNPages > 0 && pagesSinceCleanRefresh > 0 &&
           (pagesSinceCleanRefresh % darkModeFastBoostEveryNPages) == 0) {
         renderer.displayBuffer(HalDisplay::FAST_REFRESH);
