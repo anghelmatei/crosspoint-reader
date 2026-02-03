@@ -1,4 +1,4 @@
-# CrossPoint Reader
+# Inkpot Reader
 
 ## Fork notice
 
